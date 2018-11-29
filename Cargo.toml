@@ -1,0 +1,7 @@
+[package]
+name = "rust-dnssd"
+version = "0.1.0"
+authors = ["Jeremy Knope <jeremy@astro-hq.com>"]
+
+[build-dependencies]
+bindgen = "0.43.1"
