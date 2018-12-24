@@ -13,27 +13,106 @@ use std::os::raw::c_char;
 use std::mem;
 use std::ptr;
 
-pub struct Service {
+#[derive(Debug)]
+pub enum DNSServiceError {
+    InvalidString
+}
+
+pub struct DNSServiceBuilder {
+    regtype: String, // _http._tcp
+    name: Option<String>, // MyHost
+    domain: Option<String>,
+    host: Option<String>,
+    port: u16,
+}
+
+pub struct DNSService {
+    regtype: String, // _http._tcp
+    name: Option<String>, // MyHost
+    domain: Option<String>,
+    host: Option<String>,
+    port: u16,
     raw: ffi::DNSServiceRef,
 }
-impl Service {
-    
-    pub fn register(name: &str, serviceType: &str) -> Service {
-        unsafe {
-            let mut service = Service { raw: mem::zeroed() };
-            let name = CString::new(name).expect("CString::new failed");
-            let serviceType = CString::new(serviceType).expect("CString::new failed");
-            DNSServiceRegister(&mut service.raw as *mut _, 0, 0, name.as_ptr(), serviceType.as_ptr(), ptr::null(), ptr::null(), 2048, 0, ptr::null(), Some(Service::register_reply), ptr::null_mut());
-            service
+
+impl DNSServiceBuilder {
+    pub fn new(regtype: &str) -> DNSServiceBuilder {
+        // let service = unsafe {
+        //     DNSService {
+        //         regtype: String::from(regtype),
+        //         name: None,
+        //         domain: None,
+        //         host: None,
+        //         port: 0,
+        //         raw: mem::zeroed()
+        //     }
+        // };
+        DNSServiceBuilder {
+            regtype: String::from(regtype),
+            name: None,
+            domain: None,
+            host: None,
+            port: 0,
         }
     }
 
+    pub fn with_name(mut self, name: &str) -> DNSServiceBuilder {
+        self.name = Some(String::from(name));
+        self
+    }
+
+    pub fn with_domain(mut self, domain: &str) -> DNSServiceBuilder {
+        self.domain = Some(String::from(domain));
+        self
+    }
+
+    pub fn with_host(mut self, host: &str) -> DNSServiceBuilder {
+        self.host = Some(String::from(host));
+        self
+    }
+
+    pub fn with_port(mut self, port: u16) -> DNSServiceBuilder {
+        self.port = port;
+        self
+    }
+
+    pub fn register(self) -> Result<DNSService, DNSServiceError> {
+        unsafe {
+            let mut service = DNSService {
+                regtype: self.regtype,
+                name: self.name,
+                domain: self.domain,
+                host: self.host,
+                port: self.port,
+                raw: mem::zeroed(),
+            };
+            let mut name: *const i8 = ptr::null_mut();
+            if let Some(n) = &service.name {
+                let c_name = CString::new(n.as_str()).map_err(|_| DNSServiceError::InvalidString)?;
+                name = c_name.as_ptr();
+            }
+            let serviceType = CString::new(service.regtype.as_str()).map_err(|_| DNSServiceError::InvalidString)?;
+            DNSServiceRegister(&mut service.raw as *mut _, 0, 0, name, serviceType.as_ptr(), 
+                ptr::null(), ptr::null(), self.port, 0, ptr::null(), Some(DNSService::register_reply), service.void_ptr());
+            Ok(service)
+        }
+    }
+}
+
+impl DNSService {
+    /// Get c_void ptr for use in C style context point arguments
+    fn void_ptr(&mut self) -> *mut c_void {
+        self as *mut _ as *mut c_void
+    }
+
+    /// Returns socket to mDNS service, use with select()
     pub fn socket(&self) -> i32 {
         unsafe {
             return DNSServiceRefSockFD(self.raw);
         }
     }
 
+    /// Processes a reply from mDNS service, blocking until there is one
     pub fn process_result(&self) -> DNSServiceErrorType {
         unsafe {
             return DNSServiceProcessResult(self.raw);
@@ -45,12 +124,12 @@ impl Service {
     }
 
     unsafe extern "C" fn register_reply(_sdRef: DNSServiceRef, flags: DNSServiceFlags, errorCode: DNSServiceErrorType, name: *const c_char, regtype: *const c_char, domain: *const c_char, context: *mut c_void) {
-        let context: &mut Service = &mut *(context as *mut Service);
+        let context: &mut DNSService = &mut *(context as *mut DNSService);
         context.process_register_reply(flags, errorCode, name, regtype, domain);
     }
 }
 
-impl Drop for Service {
+impl Drop for DNSService {
     fn drop(&mut self) {
         println!("Dropping!");
         unsafe {
@@ -62,15 +141,12 @@ impl Drop for Service {
 #[cfg(test)]
 mod tests {
     use super::*;
-    // use std::mem;
-    // use std::ffi::{CString, c_void};
-    // use std::os::raw::c_char;
-    // use std::ptr;
     use super::ffi::kDNSServiceErr_NoError;
 
     #[test]
     fn it_works() {
-        let service = Service::register("Blargh", "_http._tcp");
+        let builder = DNSServiceBuilder::new("_http._tcp").with_port(5222);
+        let service = builder.with_name("Blargh").register().unwrap();
         let result = service.process_result();
         let socket = service.socket();
         assert_eq!(result, kDNSServiceErr_NoError);
