@@ -27,26 +27,16 @@ pub struct DNSServiceBuilder {
 }
 
 pub struct DNSService {
-    regtype: String, // _http._tcp
-    name: Option<String>, // MyHost
-    domain: Option<String>,
-    host: Option<String>,
-    port: u16,
+    pub regtype: String, // _http._tcp
+    pub name: Option<String>, // MyHost
+    pub domain: Option<String>,
+    pub host: Option<String>,
+    pub port: u16,
     raw: ffi::DNSServiceRef,
 }
 
 impl DNSServiceBuilder {
     pub fn new(regtype: &str) -> DNSServiceBuilder {
-        // let service = unsafe {
-        //     DNSService {
-        //         regtype: String::from(regtype),
-        //         name: None,
-        //         domain: None,
-        //         host: None,
-        //         port: 0,
-        //         raw: mem::zeroed()
-        //     }
-        // };
         DNSServiceBuilder {
             regtype: String::from(regtype),
             name: None,
@@ -93,9 +83,6 @@ impl DNSServiceBuilder {
                 name = c_name.as_ptr();
             }
             let serviceType = CString::new(service.regtype.as_str()).map_err(|_| DNSServiceError::InvalidString)?;
-            let c_str: &CStr = CStr::from_ptr(name);
-            let debug_name: &str = c_str.to_str().unwrap();
-            println!("Registering {:?} with {:?}", debug_name, serviceType);
             DNSServiceRegister(&mut service.raw as *mut _, 0, 0, name, serviceType.as_ptr(), 
                 ptr::null(), ptr::null(), self.port, 0, ptr::null(), Some(DNSService::register_reply), service.void_ptr());
             Ok(service)
@@ -141,7 +128,6 @@ impl DNSService {
 
 impl Drop for DNSService {
     fn drop(&mut self) {
-        println!("Dropping!");
         unsafe {
             DNSServiceRefDeallocate(self.raw);
         }
@@ -161,5 +147,6 @@ mod tests {
         let socket = service.socket();
         assert_eq!(result, kDNSServiceErr_NoError);
         assert_ne!(socket, -1);
+        assert_ne!(service.raw.is_null(), true);
     }
 }
