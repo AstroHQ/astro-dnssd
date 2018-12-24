@@ -8,7 +8,7 @@ include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 }
 
 use ffi::{DNSServiceErrorType, DNSServiceFlags, DNSServiceProcessResult, DNSServiceRef, DNSServiceRefDeallocate, DNSServiceRefSockFD, DNSServiceRegister};
-use std::ffi::{CString, c_void};
+use std::ffi::{CString, CStr, c_void};
 use std::os::raw::c_char;
 use std::mem;
 use std::ptr;
@@ -86,12 +86,16 @@ impl DNSServiceBuilder {
                 port: self.port,
                 raw: mem::zeroed(),
             };
-            let mut name: *const i8 = ptr::null_mut();
+            let mut name: *const c_char = ptr::null_mut();
+            let c_name: CString; // there's probably a better way to make it live longer?
             if let Some(n) = &service.name {
-                let c_name = CString::new(n.as_str()).map_err(|_| DNSServiceError::InvalidString)?;
+                c_name = CString::new(n.as_str()).map_err(|_| DNSServiceError::InvalidString)?;
                 name = c_name.as_ptr();
             }
             let serviceType = CString::new(service.regtype.as_str()).map_err(|_| DNSServiceError::InvalidString)?;
+            let c_str: &CStr = CStr::from_ptr(name);
+            let debug_name: &str = c_str.to_str().unwrap();
+            println!("Registering {:?} with {:?}", debug_name, serviceType);
             DNSServiceRegister(&mut service.raw as *mut _, 0, 0, name, serviceType.as_ptr(), 
                 ptr::null(), ptr::null(), self.port, 0, ptr::null(), Some(DNSService::register_reply), service.void_ptr());
             Ok(service)
@@ -120,6 +124,12 @@ impl DNSService {
     }
 
     fn process_register_reply(&self, flags: DNSServiceFlags, errorCode: DNSServiceErrorType, name: *const c_char, regtype: *const c_char, domain: *const c_char) {
+        let c_str: &CStr = unsafe { CStr::from_ptr(name) };
+        let name: &str = c_str.to_str().unwrap();
+        let c_str: &CStr = unsafe { CStr::from_ptr(regtype) };
+        let regtype: &str = c_str.to_str().unwrap();
+        let c_str: &CStr = unsafe { CStr::from_ptr(domain) };
+        let domain: &str = c_str.to_str().unwrap();
         println!("Got reply, flags: {:?} error: {:?} name: {:?} regtype: {:?} domain: {:?}", flags, errorCode, name, regtype, domain);
     }
 
