@@ -2,6 +2,7 @@
 name = "dnssd-rs"
 version = "0.1.0"
 authors = ["Jeremy Knope <jeremy@astro-hq.com>"]
+edition = "2018"
 
 [build-dependencies]
 bindgen = "0.43.1"

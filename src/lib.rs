@@ -7,7 +7,7 @@ mod ffi {
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 }
 
-use ffi::{DNSServiceErrorType, DNSServiceFlags, DNSServiceProcessResult, DNSServiceRef, DNSServiceRefDeallocate, DNSServiceRefSockFD, DNSServiceRegister};
+use crate::ffi::{DNSServiceErrorType, DNSServiceFlags, DNSServiceProcessResult, DNSServiceRef, DNSServiceRefDeallocate, DNSServiceRefSockFD, DNSServiceRegister};
 use std::ffi::{CString, CStr, c_void};
 use std::os::raw::c_char;
 use std::mem;

@@ -1,8 +1,8 @@
-extern crate rust_dnssd;
+extern crate dnssd_rs;
 // use rust_dnssd;
 use std::time::Duration;
 use std::thread;
-use rust_dnssd::*;
+use dnssd_rs::*;
 
 fn main() {
     println!("Registering service...");
