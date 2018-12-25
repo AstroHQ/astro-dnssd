@@ -19,20 +19,21 @@ pub enum DNSServiceError {
 }
 
 pub struct DNSServiceBuilder {
-    regtype: String, // _http._tcp
-    name: Option<String>, // MyHost
+    regtype: String,
+    name: Option<String>,
     domain: Option<String>,
     host: Option<String>,
     port: u16,
 }
 
 pub struct DNSService {
-    pub regtype: String, // _http._tcp
-    pub name: Option<String>, // MyHost
+    pub regtype: String,
+    pub name: Option<String>,
     pub domain: Option<String>,
     pub host: Option<String>,
     pub port: u16,
     raw: ffi::DNSServiceRef,
+    reply_callback: Box<Fn(u32, i32, &str, &str, &str) -> ()>,
 }
 
 impl DNSServiceBuilder {
@@ -66,25 +67,18 @@ impl DNSServiceBuilder {
         self
     }
 
-    pub fn register(self) -> Result<DNSService, DNSServiceError> {
+    pub fn build(self) -> Result<DNSService, DNSServiceError> {
         unsafe {
-            let mut service = DNSService {
+            let service = DNSService {
                 regtype: self.regtype,
                 name: self.name,
                 domain: self.domain,
                 host: self.host,
                 port: self.port,
                 raw: mem::zeroed(),
+                // TODO: replace this? think it might live forever
+                reply_callback: Box::new(|_, _, _, _, _| {})
             };
-            let mut name: *const c_char = ptr::null_mut();
-            let c_name: CString; // there's probably a better way to make it live longer?
-            if let Some(n) = &service.name {
-                c_name = CString::new(n.as_str()).map_err(|_| DNSServiceError::InvalidString)?;
-                name = c_name.as_ptr();
-            }
-            let serviceType = CString::new(service.regtype.as_str()).map_err(|_| DNSServiceError::InvalidString)?;
-            DNSServiceRegister(&mut service.raw as *mut _, 0, 0, name, serviceType.as_ptr(), 
-                ptr::null(), ptr::null(), self.port, 0, ptr::null(), Some(DNSService::register_reply), service.void_ptr());
             Ok(service)
         }
     }
@@ -110,19 +104,40 @@ impl DNSService {
         }
     }
 
-    fn process_register_reply(&self, flags: DNSServiceFlags, errorCode: DNSServiceErrorType, name: *const c_char, regtype: *const c_char, domain: *const c_char) {
-        let c_str: &CStr = unsafe { CStr::from_ptr(name) };
-        let name: &str = c_str.to_str().unwrap();
-        let c_str: &CStr = unsafe { CStr::from_ptr(regtype) };
-        let regtype: &str = c_str.to_str().unwrap();
-        let c_str: &CStr = unsafe { CStr::from_ptr(domain) };
-        let domain: &str = c_str.to_str().unwrap();
-        println!("Got reply, flags: {:?} error: {:?} name: {:?} regtype: {:?} domain: {:?}", flags, errorCode, name, regtype, domain);
-    }
-
     unsafe extern "C" fn register_reply(_sdRef: DNSServiceRef, flags: DNSServiceFlags, errorCode: DNSServiceErrorType, name: *const c_char, regtype: *const c_char, domain: *const c_char, context: *mut c_void) {
         let context: &mut DNSService = &mut *(context as *mut DNSService);
-        context.process_register_reply(flags, errorCode, name, regtype, domain);
+        // TODO: ensure the C string handling is safe
+        let c_str: &CStr = CStr::from_ptr(name);
+        let name: &str = c_str.to_str().unwrap();
+        let c_str: &CStr = CStr::from_ptr(regtype);
+        let regtype: &str = c_str.to_str().unwrap();
+        let c_str: &CStr = CStr::from_ptr(domain);
+        let domain: &str = c_str.to_str().unwrap();
+        if errorCode == ffi::kDNSServiceErr_NoError {
+            context.domain = Some(domain.to_owned());
+            context.name = Some(name.to_owned());
+        }
+        (context.reply_callback)(flags, errorCode, name, regtype, domain);
+    }
+
+    pub fn register<F: 'static>(&mut self, callback: F) -> Result<(), DNSServiceError>
+        where F: Fn(u32, i32, &str, &str, &str) -> ()
+    {
+        // TODO: figure out if we can have non-'static callback
+        self.reply_callback = Box::new(callback);
+        unsafe {
+            let mut name: *const c_char = ptr::null_mut();
+            // TODO: better way to manage CString lifetime here?
+            let c_name: CString;
+            if let Some(n) = &self.name {
+                c_name = CString::new(n.as_str()).map_err(|_| DNSServiceError::InvalidString)?;
+                name = c_name.as_ptr();
+            }
+            let serviceType = CString::new(self.regtype.as_str()).map_err(|_| DNSServiceError::InvalidString)?;
+            DNSServiceRegister(&mut self.raw as *mut _, 0, 0, name, serviceType.as_ptr(), 
+                ptr::null(), ptr::null(), self.port, 0, ptr::null(), Some(DNSService::register_reply), self.void_ptr());
+            Ok(())
+        }
     }
 }
 
@@ -142,7 +157,11 @@ mod tests {
     #[test]
     fn it_works() {
         let builder = DNSServiceBuilder::new("_http._tcp").with_port(5222);
-        let service = builder.with_name("Blargh").register().unwrap();
+        let mut service = builder.with_name("Blargh").build().unwrap();
+        let reg_result = service.register(|flags, error, name, regtype, domain| {
+            println!("Flags: {}, Error: {}, Name: {}, Regtype: {}, Domain: {}", flags, error, name, regtype, domain);
+        });
+        assert_eq!(reg_result.is_ok(), true);
         let result = service.process_result();
         let socket = service.socket();
         assert_eq!(result, kDNSServiceErr_NoError);
