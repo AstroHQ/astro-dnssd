@@ -8,3 +8,7 @@ categories = ["network-programming", "api-bindings"]
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 edition = "2018"
+build = "build.rs"
+
+[build-dependencies]
+pkg-config = "0.3.9"

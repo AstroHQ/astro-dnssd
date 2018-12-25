@@ -747,15 +747,12 @@ pub type DNSServiceErrorType = i32;
 extern "C" {
     /// Unix Domain Socket access, DNSServiceRef deallocation, and data processing functions
     ///
-    #[link_name = "\u{1}_DNSServiceRefSockFD"]
     pub fn DNSServiceRefSockFD(sdRef: DNSServiceRef) -> ::std::os::raw::c_int;
 }
 extern "C" {
-    #[link_name = "\u{1}_DNSServiceProcessResult"]
     pub fn DNSServiceProcessResult(sdRef: DNSServiceRef) -> DNSServiceErrorType;
 }
 extern "C" {
-    #[link_name = "\u{1}_DNSServiceRefDeallocate"]
     pub fn DNSServiceRefDeallocate(sdRef: DNSServiceRef);
 }
 /// Domain Enumeration
@@ -771,7 +768,6 @@ pub type DNSServiceDomainEnumReply = ::std::option::Option<
     ),
 >;
 extern "C" {
-    #[link_name = "\u{1}_DNSServiceEnumerateDomains"]
     pub fn DNSServiceEnumerateDomains(
         sdRef: *mut DNSServiceRef,
         flags: DNSServiceFlags,
@@ -794,7 +790,6 @@ pub type DNSServiceRegisterReply = ::std::option::Option<
     ),
 >;
 extern "C" {
-    #[link_name = "\u{1}_DNSServiceRegister"]
     pub fn DNSServiceRegister(
         sdRef: *mut DNSServiceRef,
         flags: DNSServiceFlags,
@@ -811,7 +806,6 @@ extern "C" {
     ) -> DNSServiceErrorType;
 }
 extern "C" {
-    #[link_name = "\u{1}_DNSServiceAddRecord"]
     pub fn DNSServiceAddRecord(
         sdRef: DNSServiceRef,
         RecordRef: *mut DNSRecordRef,
@@ -823,7 +817,6 @@ extern "C" {
     ) -> DNSServiceErrorType;
 }
 extern "C" {
-    #[link_name = "\u{1}_DNSServiceUpdateRecord"]
     pub fn DNSServiceUpdateRecord(
         sdRef: DNSServiceRef,
         RecordRef: DNSRecordRef,
@@ -834,7 +827,6 @@ extern "C" {
     ) -> DNSServiceErrorType;
 }
 extern "C" {
-    #[link_name = "\u{1}_DNSServiceRemoveRecord"]
     pub fn DNSServiceRemoveRecord(
         sdRef: DNSServiceRef,
         RecordRef: DNSRecordRef,
@@ -856,7 +848,6 @@ pub type DNSServiceBrowseReply = ::std::option::Option<
     ),
 >;
 extern "C" {
-    #[link_name = "\u{1}_DNSServiceBrowse"]
     pub fn DNSServiceBrowse(
         sdRef: *mut DNSServiceRef,
         flags: DNSServiceFlags,
@@ -882,7 +873,6 @@ pub type DNSServiceResolveReply = ::std::option::Option<
     ),
 >;
 extern "C" {
-    #[link_name = "\u{1}_DNSServiceResolve"]
     pub fn DNSServiceResolve(
         sdRef: *mut DNSServiceRef,
         flags: DNSServiceFlags,
@@ -897,7 +887,6 @@ extern "C" {
 extern "C" {
     ///  Special Purpose Calls (most applications will not use these)
     ///
-    #[link_name = "\u{1}_DNSServiceCreateConnection"]
     pub fn DNSServiceCreateConnection(sdRef: *mut DNSServiceRef) -> DNSServiceErrorType;
 }
 pub type DNSServiceRegisterRecordReply = ::std::option::Option<
@@ -910,7 +899,6 @@ pub type DNSServiceRegisterRecordReply = ::std::option::Option<
     ),
 >;
 extern "C" {
-    #[link_name = "\u{1}_DNSServiceRegisterRecord"]
     pub fn DNSServiceRegisterRecord(
         sdRef: DNSServiceRef,
         RecordRef: *mut DNSRecordRef,
@@ -942,7 +930,6 @@ pub type DNSServiceQueryRecordReply = ::std::option::Option<
     ),
 >;
 extern "C" {
-    #[link_name = "\u{1}_DNSServiceQueryRecord"]
     pub fn DNSServiceQueryRecord(
         sdRef: *mut DNSServiceRef,
         flags: DNSServiceFlags,
@@ -955,7 +942,6 @@ extern "C" {
     ) -> DNSServiceErrorType;
 }
 extern "C" {
-    #[link_name = "\u{1}_DNSServiceReconfirmRecord"]
     pub fn DNSServiceReconfirmRecord(
         flags: DNSServiceFlags,
         interfaceIndex: u32,
@@ -969,7 +955,6 @@ extern "C" {
 extern "C" {
     ///  General Utility Functions
     ///
-    #[link_name = "\u{1}_DNSServiceConstructFullName"]
     pub fn DNSServiceConstructFullName(
         fullName: *mut ::std::os::raw::c_char,
         service: *const ::std::os::raw::c_char,
@@ -1021,7 +1006,6 @@ fn bindgen_test_layout__TXTRecordRef_t() {
 }
 pub type TXTRecordRef = _TXTRecordRef_t;
 extern "C" {
-    #[link_name = "\u{1}_TXTRecordCreate"]
     pub fn TXTRecordCreate(
         txtRecord: *mut TXTRecordRef,
         bufferLen: u16,
@@ -1029,11 +1013,9 @@ extern "C" {
     );
 }
 extern "C" {
-    #[link_name = "\u{1}_TXTRecordDeallocate"]
     pub fn TXTRecordDeallocate(txtRecord: *mut TXTRecordRef);
 }
 extern "C" {
-    #[link_name = "\u{1}_TXTRecordSetValue"]
     pub fn TXTRecordSetValue(
         txtRecord: *mut TXTRecordRef,
         key: *const ::std::os::raw::c_char,
@@ -1042,22 +1024,18 @@ extern "C" {
     ) -> DNSServiceErrorType;
 }
 extern "C" {
-    #[link_name = "\u{1}_TXTRecordRemoveValue"]
     pub fn TXTRecordRemoveValue(
         txtRecord: *mut TXTRecordRef,
         key: *const ::std::os::raw::c_char,
     ) -> DNSServiceErrorType;
 }
 extern "C" {
-    #[link_name = "\u{1}_TXTRecordGetLength"]
     pub fn TXTRecordGetLength(txtRecord: *const TXTRecordRef) -> u16;
 }
 extern "C" {
-    #[link_name = "\u{1}_TXTRecordGetBytesPtr"]
     pub fn TXTRecordGetBytesPtr(txtRecord: *const TXTRecordRef) -> *const ::std::os::raw::c_void;
 }
 extern "C" {
-    #[link_name = "\u{1}_TXTRecordContainsKey"]
     pub fn TXTRecordContainsKey(
         txtLen: u16,
         txtRecord: *const ::std::os::raw::c_void,
@@ -1065,7 +1043,6 @@ extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 extern "C" {
-    #[link_name = "\u{1}_TXTRecordGetValuePtr"]
     pub fn TXTRecordGetValuePtr(
         txtLen: u16,
         txtRecord: *const ::std::os::raw::c_void,
@@ -1074,11 +1051,9 @@ extern "C" {
     ) -> *const ::std::os::raw::c_void;
 }
 extern "C" {
-    #[link_name = "\u{1}_TXTRecordGetCount"]
     pub fn TXTRecordGetCount(txtLen: u16, txtRecord: *const ::std::os::raw::c_void) -> u16;
 }
 extern "C" {
-    #[link_name = "\u{1}_TXTRecordGetItemAtIndex"]
     pub fn TXTRecordGetItemAtIndex(
         txtLen: u16,
         txtRecord: *const ::std::os::raw::c_void,
