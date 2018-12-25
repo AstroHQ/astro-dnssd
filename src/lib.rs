@@ -93,14 +93,14 @@ impl DNSService {
     /// Returns socket to mDNS service, use with select()
     pub fn socket(&self) -> i32 {
         unsafe {
-            return DNSServiceRefSockFD(self.raw);
+            DNSServiceRefSockFD(self.raw)
         }
     }
 
     /// Processes a reply from mDNS service, blocking until there is one
     pub fn process_result(&self) -> DNSServiceErrorType {
         unsafe {
-            return DNSServiceProcessResult(self.raw);
+            DNSServiceProcessResult(self.raw)
         }
     }
 
