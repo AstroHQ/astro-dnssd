@@ -1,7 +1,13 @@
 [package]
 name = "dnssd-rs"
 version = "0.1.0"
-authors = ["Jeremy Knope <jeremy@astro-hq.com>"]
+authors = ["Jeremy Knope <me@jeremyknope.com>"]
+description = "Simple DNS-SD wrapper"
+keywords = ["dns-sd", "dnssd", "bonjour", "zeroconf", "mdns"]
+categories = ["network-programming", "api-bindings"]
+license = "MIT"
+readme = "README.md"
+maintenance = { status = "experimental" }
 edition = "2018"
 
 [build-dependencies]
