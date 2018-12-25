@@ -2,10 +2,7 @@
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 
-mod ffi {
-#![allow(dead_code)]
-include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
-}
+mod ffi;
 
 use crate::ffi::{DNSServiceErrorType, DNSServiceFlags, DNSServiceProcessResult, DNSServiceRef, DNSServiceRefDeallocate, DNSServiceRefSockFD, DNSServiceRegister};
 use std::ffi::{CString, CStr, c_void};
