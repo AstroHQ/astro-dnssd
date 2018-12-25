@@ -5,7 +5,7 @@ authors = ["Jeremy Knope <me@jeremyknope.com>"]
 description = "Simple DNS-SD wrapper"
 keywords = ["dns-sd", "dnssd", "bonjour", "zeroconf", "mdns"]
 categories = ["network-programming", "api-bindings"]
-license = "MIT"
+license = "MIT OR Apache-2.0"
 readme = "README.md"
 maintenance = { status = "experimental" }
 edition = "2018"

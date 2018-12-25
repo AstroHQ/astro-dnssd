@@ -1,5 +1,4 @@
 extern crate dnssd_rs;
-// use rust_dnssd;
 use std::time::Duration;
 use std::thread;
 use dnssd_rs::*;
