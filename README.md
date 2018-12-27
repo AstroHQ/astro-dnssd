@@ -8,13 +8,15 @@ My attempt to learn wrapping C APIs in Rust, and aim for a minimal but friendly 
 - Service registration (Sans TXT record)
 
 ### In Progress
-- TXTRecord support for service registration
 - Service browsing
 
 ### Todo
 - How to check for more (select() on socket, but has to be win32 friendly)
+- TXTRecord support for service registration
 - Record creation
 - Name resolution
+- Port map
+- Tests
 
 ## License
 
