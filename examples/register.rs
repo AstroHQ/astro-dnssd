@@ -1,7 +1,7 @@
 extern crate dnssd_rs;
 use std::time::Duration;
 use std::thread;
-use dnssd_rs::*;
+use dnssd_rs::register::*;
 
 fn main() {
     println!("Registering service...");
