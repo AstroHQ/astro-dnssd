@@ -4,5 +4,10 @@ pub mod register;
 
 #[derive(Debug)]
 pub enum DNSServiceError {
-    InvalidString
+    /// Invalid input string
+    InvalidString,
+    /// Unexpected invalid strings from C API
+    InternalInvalidString,
+    /// Error from DNSSD service
+    ServiceError(i32),
 }

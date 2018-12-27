@@ -5,20 +5,27 @@ use std::os::raw::c_char;
 use std::mem;
 use std::ptr;
 
-pub struct DNSServiceBrowserBuilder {
+pub struct Service {
+    pub name: String,
+    pub regtype: String,
+    pub interface_index: u32,
+    pub domain: String,
+}
+
+pub struct ServiceBrowserBuilder {
     regtype: String,
     domain: Option<String>,
 }
 
-impl DNSServiceBrowserBuilder {
-    pub fn new(regtype: &str) -> DNSServiceBrowserBuilder {
-        DNSServiceBrowserBuilder {
+impl ServiceBrowserBuilder {
+    pub fn new(regtype: &str) -> ServiceBrowserBuilder {
+        ServiceBrowserBuilder {
             regtype: String::from(regtype),
             domain: None,
         }
     }
 
-    pub fn with_domain(mut self, domain: &str) -> DNSServiceBrowserBuilder {
+    pub fn with_domain(mut self, domain: &str) -> ServiceBrowserBuilder {
         self.domain = Some(String::from(domain));
         self
     }
@@ -30,7 +37,7 @@ impl DNSServiceBrowserBuilder {
                 domain: self.domain,
                 raw: mem::zeroed(),
                 // TODO: replace this? think it might live forever
-                reply_callback: Box::new(|_, _, _, _, _| {})
+                reply_callback: Box::new(|_| {})
             };
             Ok(service)
         }
@@ -41,7 +48,7 @@ pub struct DNSServiceBrowser {
     pub regtype: String,
     pub domain: Option<String>,
     raw: ffi::DNSServiceRef,
-    reply_callback: Box<Fn(u32, i32, &str, &str, &str) -> ()>,
+    reply_callback: Box<Fn(Result<Service, DNSServiceError>) -> ()>,
 }
 
 impl DNSServiceBrowser {
@@ -56,14 +63,37 @@ impl DNSServiceBrowser {
         context: *mut c_void,
     ) {
         let context: &mut DNSServiceBrowser = &mut *(context as *mut DNSServiceBrowser);
-        // TODO: ensure the C string handling is safe
-        let c_str: &CStr = CStr::from_ptr(service_name);
-        let service_name: &str = c_str.to_str().unwrap();
-        let c_str: &CStr = CStr::from_ptr(regtype);
-        let regtype: &str = c_str.to_str().unwrap();
-        let c_str: &CStr = CStr::from_ptr(reply_domain);
-        let reply_domain: &str = c_str.to_str().unwrap();
-        (context.reply_callback)(interface_index, error_code, service_name, regtype, reply_domain);
+
+        // shouldn't need any other args if there's an error
+        if error_code != 0 {
+            (context.reply_callback)(Err(DNSServiceError::ServiceError(error_code)));
+            return;
+        }
+
+        // build Strings from c_char
+        let process = || -> Result<(String, String, String), DNSServiceError> {
+            let c_str: &CStr = CStr::from_ptr(service_name);
+            let service_name: &str = c_str.to_str().map_err(|_| DNSServiceError::InternalInvalidString)?;
+            let c_str: &CStr = CStr::from_ptr(regtype);
+            let regtype: &str = c_str.to_str().map_err(|_| DNSServiceError::InternalInvalidString)?;
+            let c_str: &CStr = CStr::from_ptr(reply_domain);
+            let reply_domain: &str = c_str.to_str().map_err(|_| DNSServiceError::InternalInvalidString)?;
+            Ok((service_name.to_owned(), regtype.to_owned(), reply_domain.to_owned()))
+        };
+        match process() {
+            Ok((name, regtype, domain)) => {
+                let service = Service {
+                    name: name,
+                    regtype: regtype,
+                    interface_index: interface_index,
+                    domain: domain,
+                };
+                (context.reply_callback)(Ok(service));
+            },
+            Err(e) => {
+                (context.reply_callback)(Err(e));
+            },
+        }
     }
 
     fn void_ptr(&mut self) -> *mut c_void {
@@ -78,7 +108,7 @@ impl DNSServiceBrowser {
     }
 
     pub fn start<F: 'static>(&mut self, callback: F) -> Result<(), DNSServiceError>
-        where F: Fn(u32, i32, &str, &str, &str) -> ()
+        where F: Fn(Result<Service, DNSServiceError>) -> ()
     {
         // TODO: figure out if we can have non-'static callback
         self.reply_callback = Box::new(callback);

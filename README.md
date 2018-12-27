@@ -9,11 +9,11 @@ My attempt to learn wrapping C APIs in Rust, and aim for a minimal but friendly 
 
 ### In Progress
 - TXTRecord support for service registration
+- Service browsing
 
 ### Todo
-
+- How to check for more (select() on socket, but has to be win32 friendly)
 - Record creation
-- Service browsing
 - Name resolution
 
 ## License
