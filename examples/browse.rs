@@ -1,6 +1,6 @@
 extern crate dnssd_rs;
-use std::time::Duration;
-use std::thread;
+// use std::time::Duration;
+// use std::thread;
 use dnssd_rs::browser::*;
 
 fn main() {
@@ -11,7 +11,13 @@ fn main() {
             Err(e) => println!("Error: {:?}", e),
         }
     });
-    browser.process_result();
-    thread::sleep(Duration::from_secs(10));
-    println!("Exiting");
+    loop {
+        // if browser.has_data() {
+        //     println!("Has data!");
+            browser.process_result();
+        // }
+    }
+    
+    // thread::sleep(Duration::from_secs(10));
+    // println!("Exiting");
 }

@@ -100,12 +100,33 @@ impl DNSServiceBrowser {
         self as *mut _ as *mut c_void
     }
 
+    /// Returns socket to mDNS service, use with select()
+    pub fn socket(&self) -> i32 {
+        unsafe {
+            ffi::DNSServiceRefSockFD(self.raw)
+        }
+    }
+
     /// Processes a reply from mDNS service, blocking until there is one
     pub fn process_result(&self) -> ffi::DNSServiceErrorType {
         unsafe {
             ffi::DNSServiceProcessResult(self.raw)
         }
     }
+
+    //     /// returns true if the socket has data and process_result() should be called
+    // pub fn has_data(&self) -> bool {
+    //     // TODO: windows version of this?
+    //     unsafe {
+    //         let fd = self.socket();
+    //         let mut timeout = libc::timeval { tv_sec: 5, tv_usec: 0 };
+    //         let mut read_set = mem::uninitialized();
+    //         libc::FD_ZERO(&mut read_set);
+    //         libc::FD_SET(fd, &mut read_set);
+    //         libc::select(fd + 1, &mut read_set, ptr::null_mut(), ptr::null_mut(), &mut timeout);
+    //         libc::FD_ISSET(fd, &mut read_set)
+    //     }
+    // }
 
     pub fn start<F: 'static>(&mut self, callback: F) -> Result<(), DNSServiceError>
         where F: Fn(Result<Service, DNSServiceError>) -> ()
