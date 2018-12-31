@@ -25,7 +25,15 @@ pub struct DNSService {
     pub port: u16,
     pub txt: Option<TXTRecord>,
     raw: DNSServiceRef,
-    reply_callback: Box<Fn(u32, i32, &str, &str, &str) -> ()>,
+    reply_callback: Box<Fn(Result<DNSServiceRegisterReply, DNSServiceError>) -> ()>,
+}
+
+/// Reply information upon successful registration
+#[derive(Debug)]
+pub struct DNSServiceRegisterReply {
+    pub regtype: String,
+    pub name: String,
+    pub domain: String,
 }
 
 /// Builder for creating a DNS-SD service to advertise
@@ -84,7 +92,7 @@ impl DNSServiceBuilder {
                 txt: self.txt,
                 raw: mem::zeroed(),
                 // TODO: replace this? think it might live forever
-                reply_callback: Box::new(|_, _, _, _, _| {})
+                reply_callback: Box::new(|_| {})
             };
             Ok(service)
         }
@@ -126,25 +134,46 @@ impl DNSService {
     //     }
     // }
 
-    unsafe extern "C" fn register_reply(_sd_ref: DNSServiceRef, flags: DNSServiceFlags, error_code: DNSServiceErrorType, name: *const c_char, regtype: *const c_char, domain: *const c_char, context: *mut c_void) {
+    unsafe extern "C" fn register_reply(_sd_ref: DNSServiceRef, _flags: DNSServiceFlags, error_code: DNSServiceErrorType, name: *const c_char, regtype: *const c_char, domain: *const c_char, context: *mut c_void) {
         let context: &mut DNSService = &mut *(context as *mut DNSService);
-        // TODO: ensure the C string handling is safe
-        let c_str: &CStr = CStr::from_ptr(name);
-        let name: &str = c_str.to_str().unwrap();
-        let c_str: &CStr = CStr::from_ptr(regtype);
-        let regtype: &str = c_str.to_str().unwrap();
-        let c_str: &CStr = CStr::from_ptr(domain);
-        let domain: &str = c_str.to_str().unwrap();
-        if error_code == kDNSServiceErr_NoError {
-            context.domain = Some(domain.to_owned());
-            context.name = Some(name.to_owned());
+        let process = || -> Result<(String, String, String), DNSServiceError> {
+            let c_str: &CStr = CStr::from_ptr(name);
+            let service_name: &str = c_str.to_str().map_err(|_| DNSServiceError::InternalInvalidString)?;
+            let c_str: &CStr = CStr::from_ptr(regtype);
+            let regtype: &str = c_str.to_str().map_err(|_| DNSServiceError::InternalInvalidString)?;
+            let c_str: &CStr = CStr::from_ptr(domain);
+            let reply_domain: &str = c_str.to_str().map_err(|_| DNSServiceError::InternalInvalidString)?;
+            Ok((service_name.to_owned(), regtype.to_owned(), reply_domain.to_owned()))
+        };
+        match process() {
+            Ok((name, regtype, domain)) => {
+                if error_code == kDNSServiceErr_NoError {
+                    let reply = DNSServiceRegisterReply {
+                        regtype,
+                        name,
+                        domain,
+                    };
+                    (context.reply_callback)(Ok(reply));
+                }
+                else {
+                    (context.reply_callback)(Err(DNSServiceError::ServiceError(error_code)));
+                } 
+            },
+            Err(e) => {
+                (context.reply_callback)(Err(e));
+            },
         }
-        (context.reply_callback)(flags, error_code, name, regtype, domain);
+
+        // if error_code == kDNSServiceErr_NoError {
+        //     context.domain = Some(domain.to_owned());
+        //     context.name = Some(name.to_owned());
+        // }
+        // (context.reply_callback)(flags, error_code, name, regtype, domain);
     }
 
     /// Registers service with mDNS responder, calling callback when a reply is received (requires calling process_result() when socket is ready)
     pub fn register<F: 'static>(&mut self, callback: F) -> Result<(), DNSServiceError>
-        where F: Fn(u32, i32, &str, &str, &str) -> ()
+        where F: Fn(Result<DNSServiceRegisterReply, DNSServiceError>) -> ()
     {
         // TODO: figure out if we can have non-'static callback
         self.reply_callback = Box::new(callback);
@@ -197,14 +226,13 @@ impl Drop for DNSService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ffi::kDNSServiceErr_NoError;
 
     #[test]
     fn it_works() {
         let builder = DNSServiceBuilder::new("_http._tcp").with_port(5222);
         let mut service = builder.with_name("Blargh").build().unwrap();
-        let reg_result = service.register(|flags, error, name, regtype, domain| {
-            println!("Flags: {}, Error: {}, Name: {}, Regtype: {}, Domain: {}", flags, error, name, regtype, domain);
+        let reg_result = service.register(|reply| {
+            println!("Reply: {:?}", reply);
         });
         assert_eq!(reg_result.is_ok(), true);
         let result = service.process_result();

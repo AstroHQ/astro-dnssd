@@ -13,8 +13,11 @@ fn main() {
         .with_name("MyRustService")
         .with_txt_record(txt)
         .build().unwrap();
-    let _result = service.register(|_, error, _, _, _| {
-        println!("Registered: {}", error);
+    let _result = service.register(|reply| {
+        match reply {
+            Ok(reply) => println!("Successful reply: {:?}", reply),
+            Err(e) => println!("Error registering: {:?}", e),
+        }
     });
     loop {
         // if service.has_data() {

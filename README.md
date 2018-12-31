@@ -19,6 +19,7 @@ My attempt to learn wrapping C APIs in Rust, and aim for a minimal but friendly 
 - Tests
 - Documentation
 - Pure Rust TXT code?
+- Interior mutability? (Can we reduce the &mut arguments some?)
 
 ## License
 
