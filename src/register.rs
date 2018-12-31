@@ -149,12 +149,6 @@ impl DNSService {
                 Some(txt) => (txt.get_bytes_ptr(), txt.len()),
                 None => (ptr::null(), 0), 
             };
-            // let mut txt_record = ptr::null_mut();
-            // let mut txt_len = 0;
-            // if let Some(txt) = &mut self.txt {
-            //     txt_len = txt.len();
-            //     txt_record = txt.get_bytes_ptr() as *mut c_void;
-            // }
             let result = DNSServiceRegister(&mut self.raw as *mut _, 0, 0, name, service_type.as_ptr(), 
                 ptr::null(), ptr::null(), self.port.to_be(), txt_len, txt_record, Some(DNSService::register_reply), self.void_ptr());
             if result == kDNSServiceErr_NoError {

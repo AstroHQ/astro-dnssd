@@ -17,6 +17,7 @@ My attempt to learn wrapping C APIs in Rust, and aim for a minimal but friendly 
 - Name resolution
 - Port map
 - Tests
+- Documentation
 
 ## License
 

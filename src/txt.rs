@@ -67,7 +67,6 @@ impl Drop for TXTRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
-    // use crate::ffi::kDNSServiceErr_NoError;
 
     #[test]
     fn txt_creation() {
