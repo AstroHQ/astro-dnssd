@@ -1,5 +1,5 @@
 use crate::DNSServiceError;
-use crate::ffi::{TXTRecordCreate, TXTRecordRef, TXTRecordSetValue, TXTRecordRemoveValue, TXTRecordDeallocate, TXTRecordGetLength, TXTRecordGetBytesPtr, kDNSServiceErr_NoError};
+use crate::ffi::{TXTRecordCreate, TXTRecordRef, TXTRecordSetValue, TXTRecordRemoveValue, TXTRecordDeallocate, TXTRecordGetLength, TXTRecordGetBytesPtr, TXTRecordContainsKey, kDNSServiceErr_NoError};
 use std::ffi::{CString, c_void};
 use std::mem;
 use std::ptr;
@@ -51,6 +51,14 @@ impl TXTRecord {
         }
     }
 
+    /// Checks if a key exists
+    pub fn contains_key(&mut self, key: &str) -> Result<bool, DNSServiceError> {
+        unsafe {
+            let key = CString::new(key).map_err(|_| DNSServiceError::InvalidString)?;
+            return Ok(TXTRecordContainsKey(self.len(), self.get_bytes_ptr(), key.as_ptr()) == 1);
+        }
+    }
+
     /// Length in bytes of `TXTRecord` data
     pub fn len(&mut self) -> u16 {
         unsafe {
@@ -85,5 +93,6 @@ mod tests {
         let len = record.len();
         assert_eq!(r.is_ok(), true);
         assert_eq!(len, 12);
+        assert_eq!(record.contains_key("test").unwrap(), true);
     }
 }
