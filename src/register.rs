@@ -1,4 +1,4 @@
-use crate::ffi::{DNSServiceErrorType, DNSServiceFlags, DNSServiceProcessResult, DNSServiceRef, DNSServiceRefDeallocate, DNSServiceRefSockFD, DNSServiceRegister, kDNSServiceErr_NoError};
+use crate::ffi::{DNSServiceErrorType, DNSServiceFlags, DNSServiceProcessResult, DNSServiceRef, DNSServiceRefDeallocate, DNSServiceRefSockFD, DNSServiceRegister, DNSServiceUpdateRecord, kDNSServiceErr_NoError};
 use crate::DNSServiceError;
 use crate::txt::TXTRecord;
 use std::ffi::{CString, CStr, c_void};
@@ -155,9 +155,27 @@ impl DNSService {
             //     txt_len = txt.len();
             //     txt_record = txt.get_bytes_ptr() as *mut c_void;
             // }
-            DNSServiceRegister(&mut self.raw as *mut _, 0, 0, name, service_type.as_ptr(), 
+            let result = DNSServiceRegister(&mut self.raw as *mut _, 0, 0, name, service_type.as_ptr(), 
                 ptr::null(), ptr::null(), self.port.to_be(), txt_len, txt_record, Some(DNSService::register_reply), self.void_ptr());
-            Ok(())
+            if result == kDNSServiceErr_NoError {
+                return Ok(());
+            }
+            Err(DNSServiceError::ServiceError(result))
+        }
+    }
+
+    /// Updates service's primary TXT record, removing it if provided None
+    pub fn update_txt_record(&mut self, mut txt: Option<TXTRecord>) -> Result<(), DNSServiceError> {
+        unsafe {
+            let (txt_record, txt_len) = match &mut txt {
+                Some(txt) => (txt.get_bytes_ptr(), txt.len()),
+                None => (ptr::null(), 0), 
+            };
+            let result = DNSServiceUpdateRecord(self.raw, ptr::null_mut(), 0, txt_len, txt_record, 0);
+            if result == kDNSServiceErr_NoError {
+                return Ok(());
+            }
+            Err(DNSServiceError::ServiceError(result))
         }
     }
 }
