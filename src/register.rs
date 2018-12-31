@@ -1,5 +1,6 @@
 use crate::ffi::{DNSServiceErrorType, DNSServiceFlags, DNSServiceProcessResult, DNSServiceRef, DNSServiceRefDeallocate, DNSServiceRefSockFD, DNSServiceRegister, kDNSServiceErr_NoError};
 use crate::DNSServiceError;
+use crate::txt::TXTRecord;
 use std::ffi::{CString, CStr, c_void};
 use std::os::raw::c_char;
 use std::mem;
@@ -11,6 +12,7 @@ pub struct DNSServiceBuilder {
     domain: Option<String>,
     host: Option<String>,
     port: u16,
+    txt: Option<TXTRecord>,
 }
 
 pub struct DNSService {
@@ -19,6 +21,7 @@ pub struct DNSService {
     pub domain: Option<String>,
     pub host: Option<String>,
     pub port: u16,
+    pub txt: Option<TXTRecord>,
     raw: DNSServiceRef,
     reply_callback: Box<Fn(u32, i32, &str, &str, &str) -> ()>,
 }
@@ -31,6 +34,7 @@ impl DNSServiceBuilder {
             domain: None,
             host: None,
             port: 0,
+            txt: None,
         }
     }
 
@@ -54,6 +58,11 @@ impl DNSServiceBuilder {
         self
     }
 
+    pub fn with_txt_record(mut self, txt: TXTRecord) -> DNSServiceBuilder {
+        self.txt = Some(txt);
+        self
+    }
+
     pub fn build(self) -> Result<DNSService, DNSServiceError> {
         unsafe {
             let service = DNSService {
@@ -62,6 +71,7 @@ impl DNSServiceBuilder {
                 domain: self.domain,
                 host: self.host,
                 port: self.port,
+                txt: self.txt,
                 raw: mem::zeroed(),
                 // TODO: replace this? think it might live forever
                 reply_callback: Box::new(|_, _, _, _, _| {})
@@ -135,8 +145,18 @@ impl DNSService {
                 name = c_name.as_ptr();
             }
             let service_type = CString::new(self.regtype.as_str()).map_err(|_| DNSServiceError::InvalidString)?;
+            let (txt_record, txt_len) = match &mut self.txt {
+                Some(txt) => (txt.get_bytes_ptr(), txt.len()),
+                None => (ptr::null(), 0), 
+            };
+            // let mut txt_record = ptr::null_mut();
+            // let mut txt_len = 0;
+            // if let Some(txt) = &mut self.txt {
+            //     txt_len = txt.len();
+            //     txt_record = txt.get_bytes_ptr() as *mut c_void;
+            // }
             DNSServiceRegister(&mut self.raw as *mut _, 0, 0, name, service_type.as_ptr(), 
-                ptr::null(), ptr::null(), self.port.to_be(), 0, ptr::null(), Some(DNSService::register_reply), self.void_ptr());
+                ptr::null(), ptr::null(), self.port.to_be(), txt_len, txt_record, Some(DNSService::register_reply), self.void_ptr());
             Ok(())
         }
     }

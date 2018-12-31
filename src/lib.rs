@@ -1,6 +1,7 @@
 mod ffi;
 pub mod browser;
 pub mod register;
+pub mod txt;
 
 #[derive(Debug)]
 pub enum DNSServiceError {
