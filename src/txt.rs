@@ -4,11 +4,13 @@ use std::ffi::{CString, c_void};
 use std::mem;
 use std::ptr;
 
+/// Represents a TXTRecord for dns-sd, containing 0 or more key=value pairs
 pub struct TXTRecord {
     raw: TXTRecordRef
 }
 
 impl TXTRecord {
+    /// Creates a new empty TXTRecord with internally managed buffer
     pub fn new() -> TXTRecord {
         unsafe {
             let mut record = TXTRecord {
@@ -19,11 +21,16 @@ impl TXTRecord {
         }
     }
 
+    /// Sets a key/value pair with given strings
     pub fn set_value(&mut self, key: &str, value: &str) -> Result<(), DNSServiceError> {
+        self.set_value_bytes(key, value.as_bytes())
+    }
+
+    /// Sets a key/value pair to a raw bytes value
+    pub fn set_value_bytes(&mut self, key: &str, value: &[u8]) -> Result<(), DNSServiceError> {
         unsafe {
             let key = CString::new(key).map_err(|_| DNSServiceError::InvalidString)?;
             let value_size = value.len() as u8;
-            let value = CString::new(value).map_err(|_| DNSServiceError::InvalidString)?;
             let result = TXTRecordSetValue(&mut self.raw, key.as_ptr(), value_size, value.as_ptr() as *mut c_void);
             if result == kDNSServiceErr_NoError {
                 return Ok(());
@@ -32,6 +39,7 @@ impl TXTRecord {
         }
     }
 
+    /// Removes a key/value pair
     pub fn remove_value(&mut self, key: &str) -> Result<(), DNSServiceError> {
         unsafe {
             let key = CString::new(key).map_err(|_| DNSServiceError::InvalidString)?;
@@ -43,12 +51,14 @@ impl TXTRecord {
         }
     }
 
+    /// Length in bytes of `TXTRecord` data
     pub fn len(&mut self) -> u16 {
         unsafe {
             TXTRecordGetLength(&mut self.raw)
         }
     }
 
+    /// Raw bytes pointer for `TXTRecord`
     pub fn get_bytes_ptr(&mut self) -> *const c_void {
         unsafe {
             TXTRecordGetBytesPtr(&mut self.raw)

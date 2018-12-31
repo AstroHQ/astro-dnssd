@@ -18,6 +18,7 @@ My attempt to learn wrapping C APIs in Rust, and aim for a minimal but friendly 
 - Port map
 - Tests
 - Documentation
+- Pure Rust TXT code?
 
 ## License
 

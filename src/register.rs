@@ -6,6 +6,7 @@ use std::os::raw::c_char;
 use std::mem;
 use std::ptr;
 
+/// Builder for creating a new DNSService for registration purposes
 pub struct DNSServiceBuilder {
     regtype: String,
     name: Option<String>,
@@ -15,6 +16,7 @@ pub struct DNSServiceBuilder {
     txt: Option<TXTRecord>,
 }
 
+/// DNS-SD Service for registration use
 pub struct DNSService {
     pub regtype: String,
     pub name: Option<String>,
@@ -26,7 +28,9 @@ pub struct DNSService {
     reply_callback: Box<Fn(u32, i32, &str, &str, &str) -> ()>,
 }
 
+/// Builder for creating a DNS-SD service to advertise
 impl DNSServiceBuilder {
+    /// Starts a new service builder with a given type (i.e. _http._tcp)
     pub fn new(regtype: &str) -> DNSServiceBuilder {
         DNSServiceBuilder {
             regtype: String::from(regtype),
@@ -38,31 +42,37 @@ impl DNSServiceBuilder {
         }
     }
 
+    /// Name to use for service, defaults to hostname
     pub fn with_name(mut self, name: &str) -> DNSServiceBuilder {
         self.name = Some(String::from(name));
         self
     }
 
+    /// Domain to register service on, default is .local+
     pub fn with_domain(mut self, domain: &str) -> DNSServiceBuilder {
         self.domain = Some(String::from(domain));
         self
     }
 
+    /// Host to use for service, defaults to machine's host
     pub fn with_host(mut self, host: &str) -> DNSServiceBuilder {
         self.host = Some(String::from(host));
         self
     }
 
+    /// Port to use for service, 0 will mean a placeholder service, not showing up in browser
     pub fn with_port(mut self, port: u16) -> DNSServiceBuilder {
         self.port = port;
         self
     }
 
+    /// Includes a TXT record for the service
     pub fn with_txt_record(mut self, txt: TXTRecord) -> DNSServiceBuilder {
         self.txt = Some(txt);
         self
     }
 
+    /// Builds DNSService
     pub fn build(self) -> Result<DNSService, DNSServiceError> {
         unsafe {
             let service = DNSService {
@@ -95,6 +105,7 @@ impl DNSService {
     }
 
     /// Processes a reply from mDNS service, blocking until there is one
+    /// To avoid blocking, check if `socket` is ready for reading
     pub fn process_result(&self) -> DNSServiceErrorType {
         unsafe {
             DNSServiceProcessResult(self.raw)
@@ -131,6 +142,7 @@ impl DNSService {
         (context.reply_callback)(flags, error_code, name, regtype, domain);
     }
 
+    /// Registers service with mDNS responder, calling callback when a reply is received (requires calling process_result() when socket is ready)
     pub fn register<F: 'static>(&mut self, callback: F) -> Result<(), DNSServiceError>
         where F: Fn(u32, i32, &str, &str, &str) -> ()
     {
