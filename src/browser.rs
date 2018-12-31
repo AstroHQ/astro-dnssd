@@ -116,7 +116,6 @@ impl DNSServiceBrowser {
 
     //     /// returns true if the socket has data and process_result() should be called
     // pub fn has_data(&self) -> bool {
-    //     // TODO: windows version of this?
     //     unsafe {
     //         let fd = self.socket();
     //         let mut timeout = libc::timeval { tv_sec: 5, tv_usec: 0 };
@@ -134,15 +133,14 @@ impl DNSServiceBrowser {
         // TODO: figure out if we can have non-'static callback
         self.reply_callback = Box::new(callback);
         unsafe {
-            let mut domain: *const c_char = ptr::null_mut();
-            // TODO: better way to manage CString lifetime here?
-            let c_domain: CString;
-            if let Some(n) = &self.domain {
-                c_domain = CString::new(n.as_str()).map_err(|_| DNSServiceError::InvalidString)?;
-                domain = c_domain.as_ptr();
+            let c_domain: Option<CString>;
+            if let Some(d) = &self.domain {
+                c_domain = Some(CString::new(d.as_str()).map_err(|_| DNSServiceError::InvalidString)?);
+            } else {
+                c_domain = None;
             }
             let service_type = CString::new(self.regtype.as_str()).map_err(|_| DNSServiceError::InvalidString)?;
-            ffi::DNSServiceBrowse(&mut self.raw as *mut _, 0, 0, service_type.as_ptr(), domain, Some(DNSServiceBrowser::reply_callback), self.void_ptr());
+            ffi::DNSServiceBrowse(&mut self.raw as *mut _, 0, 0, service_type.as_ptr(), c_domain.map_or(ptr::null_mut(), |d| d.as_ptr()), Some(DNSServiceBrowser::reply_callback), self.void_ptr());
             Ok(())
         }
     }

@@ -122,7 +122,6 @@ impl DNSService {
 
     // /// returns true if the socket has data and process_result() should be called
     // pub fn has_data(&self) -> bool {
-    //     // TODO: windows version of this?
     //     unsafe {
     //         let fd = self.socket();
     //         let mut timeout = libc::timeval { tv_sec: 5, tv_usec: 0 };
@@ -163,12 +162,6 @@ impl DNSService {
                 (context.reply_callback)(Err(e));
             },
         }
-
-        // if error_code == kDNSServiceErr_NoError {
-        //     context.domain = Some(domain.to_owned());
-        //     context.name = Some(name.to_owned());
-        // }
-        // (context.reply_callback)(flags, error_code, name, regtype, domain);
     }
 
     /// Registers service with mDNS responder, calling callback when a reply is received (requires calling process_result() when socket is ready)
@@ -178,19 +171,18 @@ impl DNSService {
         // TODO: figure out if we can have non-'static callback
         self.reply_callback = Box::new(callback);
         unsafe {
-            let mut name: *const c_char = ptr::null_mut();
-            // TODO: better way to manage CString lifetime here?
-            let c_name: CString;
+            let c_name: Option<CString>;
             if let Some(n) = &self.name {
-                c_name = CString::new(n.as_str()).map_err(|_| DNSServiceError::InvalidString)?;
-                name = c_name.as_ptr();
+                c_name = Some(CString::new(n.as_str()).map_err(|_| DNSServiceError::InvalidString)?);
+            } else {
+                c_name = None;
             }
             let service_type = CString::new(self.regtype.as_str()).map_err(|_| DNSServiceError::InvalidString)?;
             let (txt_record, txt_len) = match &mut self.txt {
                 Some(txt) => (txt.get_bytes_ptr(), txt.len()),
                 None => (ptr::null(), 0), 
             };
-            let result = DNSServiceRegister(&mut self.raw as *mut _, 0, 0, name, service_type.as_ptr(), 
+            let result = DNSServiceRegister(&mut self.raw, 0, 0, c_name.map_or(ptr::null_mut(), |c| c.as_ptr()), service_type.as_ptr(), 
                 ptr::null(), ptr::null(), self.port.to_be(), txt_len, txt_record, Some(DNSService::register_reply), self.void_ptr());
             if result == kDNSServiceErr_NoError {
                 return Ok(());
