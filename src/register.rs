@@ -177,6 +177,7 @@ impl DNSService {
             } else {
                 c_name = None;
             }
+            let c_name = c_name.as_ref();
             let service_type = CString::new(self.regtype.as_str()).map_err(|_| DNSServiceError::InvalidString)?;
             let (txt_record, txt_len) = match &mut self.txt {
                 Some(txt) => (txt.get_bytes_ptr(), txt.len()),

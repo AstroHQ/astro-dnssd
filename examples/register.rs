@@ -21,7 +21,7 @@ fn main() {
     });
     loop {
         // if service.has_data() {
-            println!("Has data!");
+            // println!("Has data!");
             service.process_result();
         // }
     }
