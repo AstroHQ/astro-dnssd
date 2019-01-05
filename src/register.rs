@@ -221,17 +221,37 @@ mod tests {
     use super::*;
 
     #[test]
-    fn it_works() {
+    fn registration_with_name() {
+        use std::sync::mpsc::channel;
+        use std::time::Duration;
+        let (tx, rx) = channel::<bool>();
         let builder = DNSServiceBuilder::new("_http._tcp").with_port(5222);
-        let mut service = builder.with_name("Blargh").build().unwrap();
-        let reg_result = service.register(|reply| {
-            println!("Reply: {:?}", reply);
+        let mut service = builder.with_name("MyRustService").build().unwrap();
+        let reg_result = service.register(move |reply| {
+            assert!(reply.is_ok());
+            let reply = reply.unwrap();
+            assert_eq!(reply.regtype, "_http._tcp.");
+            assert_eq!(reply.name, "MyRustService");
+            assert_eq!(reply.domain, "local.");
+            tx.send(true).unwrap();
         });
-        assert_eq!(reg_result.is_ok(), true);
-        let result = service.process_result();
-        let socket = service.socket();
-        assert_eq!(result, kDNSServiceErr_NoError);
-        assert_ne!(socket, -1);
+        // should have a raw pointer & register result should be Ok
         assert_ne!(service.raw.is_null(), true);
+        assert_eq!(reg_result.is_ok(), true);
+        // This should block until we get a reply, and return no error once it does
+        let result = service.process_result();
+        assert_eq!(result, kDNSServiceErr_NoError);
+        // ensure we get the reply (we saw it failing on linux)
+        let d = Duration::from_millis(500);
+        let reply_happened = rx.recv_timeout(d).unwrap();
+        assert_eq!(reply_happened, true);
+        // should have a valid socket
+        let socket = service.socket();
+        assert_ne!(socket, -1);
     }
+
+    // #[test]
+    // fn registration_with_txt() {
+    //     let txt = TXTRecord::new();
+    // }
 }
