@@ -7,7 +7,7 @@ use dnssd_rs::txt::*;
 fn main() {
     println!("Registering service...");
     let mut txt = TXTRecord::new();
-    let _ = txt.set_value("s", "open");
+    let _ = txt.insert("s", Some("open"));
     let mut service = DNSServiceBuilder::new("_rust._tcp")
         .with_port(2048)
         .with_name("MyRustService")

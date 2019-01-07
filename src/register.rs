@@ -180,7 +180,7 @@ impl DNSService {
             let c_name = c_name.as_ref();
             let service_type = CString::new(self.regtype.as_str()).map_err(|_| DNSServiceError::InvalidString)?;
             let (txt_record, txt_len) = match &mut self.txt {
-                Some(txt) => (txt.get_bytes_ptr(), txt.len()),
+                Some(txt) => (txt.raw_bytes_ptr(), txt.raw_bytes_len()),
                 None => (ptr::null(), 0), 
             };
             let result = DNSServiceRegister(&mut self.raw, 0, 0, c_name.map_or(ptr::null_mut(), |c| c.as_ptr()), service_type.as_ptr(), 
@@ -196,7 +196,7 @@ impl DNSService {
     pub fn update_txt_record(&mut self, mut txt: Option<TXTRecord>) -> Result<(), DNSServiceError> {
         unsafe {
             let (txt_record, txt_len) = match &mut txt {
-                Some(txt) => (txt.get_bytes_ptr(), txt.len()),
+                Some(txt) => (txt.raw_bytes_ptr(), txt.raw_bytes_len()),
                 None => (ptr::null(), 0), 
             };
             let result = DNSServiceUpdateRecord(self.raw, ptr::null_mut(), 0, txt_len, txt_record, 0);
