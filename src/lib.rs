@@ -3,7 +3,7 @@ pub mod browser;
 pub mod register;
 pub mod txt;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum DNSServiceError {
     /// Invalid input string
     InvalidString,
