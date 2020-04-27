@@ -13,6 +13,11 @@ use std::slice;
 pub struct TXTRecord {
     raw: TXTRecordRef,
 }
+impl Default for TXTRecord {
+    fn default() -> Self {
+        TXTRecord::new()
+    }
+}
 
 impl TXTRecord {
     /// Creates a new empty TXT Record with an internally managed buffer
@@ -111,6 +116,11 @@ impl TXTRecord {
     /// Returns the number of keys stored in the TXT Record
     pub fn len(&self) -> u16 {
         unsafe { TXTRecordGetCount(self.raw_bytes_len(), self.raw_bytes_ptr()) }
+    }
+
+    /// Returns if TXTRecord is empty
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     /// Returns the raw bytes of the TXT Record as a slice

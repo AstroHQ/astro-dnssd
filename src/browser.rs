@@ -93,10 +93,10 @@ impl DNSServiceBrowser {
         match process() {
             Ok((name, regtype, domain)) => {
                 let service = Service {
-                    name: name,
-                    regtype: regtype,
-                    interface_index: interface_index,
-                    domain: domain,
+                    name,
+                    regtype,
+                    interface_index,
+                    domain,
                 };
                 (context.reply_callback)(Ok(service));
             }
