@@ -1,4 +1,4 @@
-# Astro DNS-SD (Rust Wrapper for Bonjour/DNS-SD APIs)
+# Astro DNS-SD
 
 Minimal but friendly safe wrapper around dns-sd(Bonjour, mDNS, Zeroconf DNS) APIs.
 
@@ -27,6 +27,8 @@ Minimal but friendly safe wrapper around dns-sd(Bonjour, mDNS, Zeroconf DNS) API
 ## Example
 
 ```rust
+    use astro_dnssd::register::DNSServiceBuilder;
+    use astro_dnssd::txt::TXTRecord;
     let mut txt = TXTRecord::new();
     let _ = txt.insert("s", Some("open"));
     let mut service = DNSServiceBuilder::new("_rust._tcp")
