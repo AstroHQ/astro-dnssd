@@ -1,9 +1,13 @@
-use crate::ffi::{DNSServiceErrorType, DNSServiceFlags, DNSServiceProcessResult, DNSServiceRef, DNSServiceRefDeallocate, DNSServiceRefSockFD, DNSServiceRegister, DNSServiceUpdateRecord, kDNSServiceErr_NoError};
-use crate::DNSServiceError;
+use crate::ffi::{
+    kDNSServiceErr_NoError, DNSServiceErrorType, DNSServiceFlags, DNSServiceProcessResult,
+    DNSServiceRef, DNSServiceRefDeallocate, DNSServiceRefSockFD, DNSServiceRegister,
+    DNSServiceUpdateRecord,
+};
 use crate::txt::TXTRecord;
-use std::ffi::{CString, CStr, c_void};
-use std::os::raw::c_char;
+use crate::DNSServiceError;
+use std::ffi::{c_void, CStr, CString};
 use std::mem;
+use std::os::raw::c_char;
 use std::ptr;
 
 /// Builder for creating a new DNSService for registration purposes
@@ -25,7 +29,7 @@ pub struct DNSService {
     pub port: u16,
     pub txt: Option<TXTRecord>,
     raw: DNSServiceRef,
-    reply_callback: Box<Fn(Result<DNSServiceRegisterReply, DNSServiceError>) -> ()>,
+    reply_callback: Box<dyn Fn(Result<DNSServiceRegisterReply, DNSServiceError>) -> ()>,
 }
 
 /// Reply information upon successful registration
@@ -92,7 +96,7 @@ impl DNSServiceBuilder {
                 txt: self.txt,
                 raw: mem::zeroed(),
                 // TODO: replace this? think it might live forever
-                reply_callback: Box::new(|_| {})
+                reply_callback: Box::new(|_| {}),
             };
             Ok(service)
         }
@@ -107,17 +111,13 @@ impl DNSService {
 
     /// Returns socket to mDNS service, use with select()
     pub fn socket(&self) -> i32 {
-        unsafe {
-            DNSServiceRefSockFD(self.raw)
-        }
+        unsafe { DNSServiceRefSockFD(self.raw) }
     }
 
     /// Processes a reply from mDNS service, blocking until there is one
     /// To avoid blocking, check if `socket` is ready for reading
     pub fn process_result(&self) -> DNSServiceErrorType {
-        unsafe {
-            DNSServiceProcessResult(self.raw)
-        }
+        unsafe { DNSServiceProcessResult(self.raw) }
     }
 
     // /// returns true if the socket has data and process_result() should be called
@@ -133,16 +133,34 @@ impl DNSService {
     //     }
     // }
 
-    unsafe extern "C" fn register_reply(_sd_ref: DNSServiceRef, _flags: DNSServiceFlags, error_code: DNSServiceErrorType, name: *const c_char, regtype: *const c_char, domain: *const c_char, context: *mut c_void) {
+    unsafe extern "C" fn register_reply(
+        _sd_ref: DNSServiceRef,
+        _flags: DNSServiceFlags,
+        error_code: DNSServiceErrorType,
+        name: *const c_char,
+        regtype: *const c_char,
+        domain: *const c_char,
+        context: *mut c_void,
+    ) {
         let context: &mut DNSService = &mut *(context as *mut DNSService);
         let process = || -> Result<(String, String, String), DNSServiceError> {
             let c_str: &CStr = CStr::from_ptr(name);
-            let service_name: &str = c_str.to_str().map_err(|_| DNSServiceError::InternalInvalidString)?;
+            let service_name: &str = c_str
+                .to_str()
+                .map_err(|_| DNSServiceError::InternalInvalidString)?;
             let c_str: &CStr = CStr::from_ptr(regtype);
-            let regtype: &str = c_str.to_str().map_err(|_| DNSServiceError::InternalInvalidString)?;
+            let regtype: &str = c_str
+                .to_str()
+                .map_err(|_| DNSServiceError::InternalInvalidString)?;
             let c_str: &CStr = CStr::from_ptr(domain);
-            let reply_domain: &str = c_str.to_str().map_err(|_| DNSServiceError::InternalInvalidString)?;
-            Ok((service_name.to_owned(), regtype.to_owned(), reply_domain.to_owned()))
+            let reply_domain: &str = c_str
+                .to_str()
+                .map_err(|_| DNSServiceError::InternalInvalidString)?;
+            Ok((
+                service_name.to_owned(),
+                regtype.to_owned(),
+                reply_domain.to_owned(),
+            ))
         };
         match process() {
             Ok((name, regtype, domain)) => {
@@ -153,38 +171,52 @@ impl DNSService {
                         domain,
                     };
                     (context.reply_callback)(Ok(reply));
-                }
-                else {
+                } else {
                     (context.reply_callback)(Err(DNSServiceError::ServiceError(error_code)));
-                } 
-            },
+                }
+            }
             Err(e) => {
                 (context.reply_callback)(Err(e));
-            },
+            }
         }
     }
 
     /// Registers service with mDNS responder, calling callback when a reply is received (requires calling process_result() when socket is ready)
     pub fn register<F: 'static>(&mut self, callback: F) -> Result<(), DNSServiceError>
-        where F: Fn(Result<DNSServiceRegisterReply, DNSServiceError>) -> ()
+    where
+        F: Fn(Result<DNSServiceRegisterReply, DNSServiceError>) -> (),
     {
         // TODO: figure out if we can have non-'static callback
         self.reply_callback = Box::new(callback);
         unsafe {
             let c_name: Option<CString>;
             if let Some(n) = &self.name {
-                c_name = Some(CString::new(n.as_str()).map_err(|_| DNSServiceError::InvalidString)?);
+                c_name =
+                    Some(CString::new(n.as_str()).map_err(|_| DNSServiceError::InvalidString)?);
             } else {
                 c_name = None;
             }
             let c_name = c_name.as_ref();
-            let service_type = CString::new(self.regtype.as_str()).map_err(|_| DNSServiceError::InvalidString)?;
+            let service_type =
+                CString::new(self.regtype.as_str()).map_err(|_| DNSServiceError::InvalidString)?;
             let (txt_record, txt_len) = match &mut self.txt {
                 Some(txt) => (txt.raw_bytes_ptr(), txt.raw_bytes_len()),
-                None => (ptr::null(), 0), 
+                None => (ptr::null(), 0),
             };
-            let result = DNSServiceRegister(&mut self.raw, 0, 0, c_name.map_or(ptr::null_mut(), |c| c.as_ptr()), service_type.as_ptr(), 
-                ptr::null(), ptr::null(), self.port.to_be(), txt_len, txt_record, Some(DNSService::register_reply), self.void_ptr());
+            let result = DNSServiceRegister(
+                &mut self.raw,
+                0,
+                0,
+                c_name.map_or(ptr::null_mut(), |c| c.as_ptr()),
+                service_type.as_ptr(),
+                ptr::null(),
+                ptr::null(),
+                self.port.to_be(),
+                txt_len,
+                txt_record,
+                Some(DNSService::register_reply),
+                self.void_ptr(),
+            );
             if result == kDNSServiceErr_NoError {
                 return Ok(());
             }
@@ -197,9 +229,10 @@ impl DNSService {
         unsafe {
             let (txt_record, txt_len) = match &mut txt {
                 Some(txt) => (txt.raw_bytes_ptr(), txt.raw_bytes_len()),
-                None => (ptr::null(), 0), 
+                None => (ptr::null(), 0),
             };
-            let result = DNSServiceUpdateRecord(self.raw, ptr::null_mut(), 0, txt_len, txt_record, 0);
+            let result =
+                DNSServiceUpdateRecord(self.raw, ptr::null_mut(), 0, txt_len, txt_record, 0);
             if result == kDNSServiceErr_NoError {
                 return Ok(());
             }

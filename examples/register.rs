@@ -1,8 +1,5 @@
-extern crate dnssd_rs;
-// use std::time::Duration;
-// use std::thread;
-use dnssd_rs::register::*;
-use dnssd_rs::txt::*;
+use astro_dnssd::register::*;
+use astro_dnssd::txt::*;
 
 fn main() {
     println!("Registering service...");
@@ -12,17 +9,16 @@ fn main() {
         .with_port(2048)
         .with_name("MyRustService")
         .with_txt_record(txt)
-        .build().unwrap();
-    let _result = service.register(|reply| {
-        match reply {
-            Ok(reply) => println!("Successful reply: {:?}", reply),
-            Err(e) => println!("Error registering: {:?}", e),
-        }
+        .build()
+        .unwrap();
+    let _result = service.register(|reply| match reply {
+        Ok(reply) => println!("Successful reply: {:?}", reply),
+        Err(e) => println!("Error registering: {:?}", e),
     });
     loop {
         // if service.has_data() {
-            // println!("Has data!");
-            service.process_result();
+        // println!("Has data!");
+        service.process_result();
         // }
     }
     // service.process_result();

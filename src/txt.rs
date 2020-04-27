@@ -1,38 +1,46 @@
+use crate::ffi::{
+    kDNSServiceErr_NoError, TXTRecordContainsKey, TXTRecordCreate, TXTRecordDeallocate,
+    TXTRecordGetBytesPtr, TXTRecordGetCount, TXTRecordGetLength, TXTRecordGetValuePtr,
+    TXTRecordRef, TXTRecordRemoveValue, TXTRecordSetValue,
+};
 use crate::DNSServiceError;
-use crate::ffi::{TXTRecordCreate, TXTRecordRef, TXTRecordGetCount, TXTRecordSetValue, TXTRecordRemoveValue, TXTRecordDeallocate, TXTRecordGetLength, TXTRecordGetBytesPtr, TXTRecordContainsKey, TXTRecordGetValuePtr, kDNSServiceErr_NoError};
-use std::ffi::{CString, c_void};
+use std::ffi::{c_void, CString};
 use std::mem;
 use std::ptr;
 use std::slice;
 
 /// Represents a TXT Record for dns-sd, containing 0 or more key=value pairs
 pub struct TXTRecord {
-    raw: TXTRecordRef
+    raw: TXTRecordRef,
 }
 
 impl TXTRecord {
     /// Creates a new empty TXT Record with an internally managed buffer
     pub fn new() -> TXTRecord {
         unsafe {
-            let mut record = TXTRecord {
-                raw: mem::uninitialized(),
-            };
+            let mut record = TXTRecord { raw: mem::zeroed() };
             TXTRecordCreate(&mut record.raw, 0, ptr::null_mut());
             record
         }
     }
 
     /// Sets a key/value pair
-    /// 
+    ///
     /// **Note:** Only the first 256 bytes of the value will be used.
     pub fn insert<V>(&mut self, key: &str, value: Option<V>) -> Result<(), DNSServiceError>
-        where V: AsRef<[u8]>
+    where
+        V: AsRef<[u8]>,
     {
         let value = value.as_ref().map(|x| x.as_ref());
         let key = CString::new(key).or(Err(DNSServiceError::InvalidString))?;
         let value_size = value.map_or(0, |x| x.len().min(u8::max_value() as usize) as u8);
         let result = unsafe {
-            TXTRecordSetValue(&mut self.raw, key.as_ptr(), value_size, value.map_or(ptr::null(), |x| x.as_ptr() as *const c_void))
+            TXTRecordSetValue(
+                &mut self.raw,
+                key.as_ptr(),
+                value_size,
+                value.map_or(ptr::null(), |x| x.as_ptr() as *const c_void),
+            )
         };
         if result == kDNSServiceErr_NoError {
             return Ok(());
@@ -86,7 +94,12 @@ impl TXTRecord {
         };
         let mut value_len = 0u8;
         unsafe {
-            let ptr = TXTRecordGetValuePtr(self.raw_bytes_len(), self.raw_bytes_ptr(), key.as_ptr(), &mut value_len);
+            let ptr = TXTRecordGetValuePtr(
+                self.raw_bytes_len(),
+                self.raw_bytes_ptr(),
+                key.as_ptr(),
+                &mut value_len,
+            );
             if ptr.is_null() {
                 None
             } else {
@@ -97,30 +110,27 @@ impl TXTRecord {
 
     /// Returns the number of keys stored in the TXT Record
     pub fn len(&self) -> u16 {
-        unsafe {
-            TXTRecordGetCount(self.raw_bytes_len(), self.raw_bytes_ptr())
-        }
+        unsafe { TXTRecordGetCount(self.raw_bytes_len(), self.raw_bytes_ptr()) }
     }
 
     /// Returns the raw bytes of the TXT Record as a slice
     pub fn raw_bytes(&self) -> &[u8] {
         unsafe {
-            slice::from_raw_parts(self.raw_bytes_ptr() as *const u8, self.raw_bytes_len() as usize)
+            slice::from_raw_parts(
+                self.raw_bytes_ptr() as *const u8,
+                self.raw_bytes_len() as usize,
+            )
         }
     }
 
     /// Returns the length in bytes of the TXT Record data
     pub fn raw_bytes_len(&self) -> u16 {
-        unsafe {
-            TXTRecordGetLength(&self.raw)
-        }
+        unsafe { TXTRecordGetLength(&self.raw) }
     }
 
     /// Returns the raw bytes pointer for the TXT Record
     pub fn raw_bytes_ptr(&self) -> *const c_void {
-        unsafe {
-            TXTRecordGetBytesPtr(&self.raw)
-        }
+        unsafe { TXTRecordGetBytesPtr(&self.raw) }
     }
 }
 

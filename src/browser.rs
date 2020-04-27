@@ -1,8 +1,8 @@
 use crate::ffi;
 use crate::DNSServiceError;
-use std::ffi::{CString, CStr, c_void};
-use std::os::raw::c_char;
+use std::ffi::{c_void, CStr, CString};
 use std::mem;
+use std::os::raw::c_char;
 use std::ptr;
 
 pub struct Service {
@@ -37,7 +37,7 @@ impl ServiceBrowserBuilder {
                 domain: self.domain,
                 raw: mem::zeroed(),
                 // TODO: replace this? think it might live forever
-                reply_callback: Box::new(|_| {})
+                reply_callback: Box::new(|_| {}),
             };
             Ok(service)
         }
@@ -48,7 +48,7 @@ pub struct DNSServiceBrowser {
     pub regtype: String,
     pub domain: Option<String>,
     raw: ffi::DNSServiceRef,
-    reply_callback: Box<Fn(Result<Service, DNSServiceError>) -> ()>,
+    reply_callback: Box<dyn Fn(Result<Service, DNSServiceError>) -> ()>,
 }
 
 impl DNSServiceBrowser {
@@ -73,12 +73,22 @@ impl DNSServiceBrowser {
         // build Strings from c_char
         let process = || -> Result<(String, String, String), DNSServiceError> {
             let c_str: &CStr = CStr::from_ptr(service_name);
-            let service_name: &str = c_str.to_str().map_err(|_| DNSServiceError::InternalInvalidString)?;
+            let service_name: &str = c_str
+                .to_str()
+                .map_err(|_| DNSServiceError::InternalInvalidString)?;
             let c_str: &CStr = CStr::from_ptr(regtype);
-            let regtype: &str = c_str.to_str().map_err(|_| DNSServiceError::InternalInvalidString)?;
+            let regtype: &str = c_str
+                .to_str()
+                .map_err(|_| DNSServiceError::InternalInvalidString)?;
             let c_str: &CStr = CStr::from_ptr(reply_domain);
-            let reply_domain: &str = c_str.to_str().map_err(|_| DNSServiceError::InternalInvalidString)?;
-            Ok((service_name.to_owned(), regtype.to_owned(), reply_domain.to_owned()))
+            let reply_domain: &str = c_str
+                .to_str()
+                .map_err(|_| DNSServiceError::InternalInvalidString)?;
+            Ok((
+                service_name.to_owned(),
+                regtype.to_owned(),
+                reply_domain.to_owned(),
+            ))
         };
         match process() {
             Ok((name, regtype, domain)) => {
@@ -89,10 +99,10 @@ impl DNSServiceBrowser {
                     domain: domain,
                 };
                 (context.reply_callback)(Ok(service));
-            },
+            }
             Err(e) => {
                 (context.reply_callback)(Err(e));
-            },
+            }
         }
     }
 
@@ -102,16 +112,12 @@ impl DNSServiceBrowser {
 
     /// Returns socket to mDNS service, use with select()
     pub fn socket(&self) -> i32 {
-        unsafe {
-            ffi::DNSServiceRefSockFD(self.raw)
-        }
+        unsafe { ffi::DNSServiceRefSockFD(self.raw) }
     }
 
     /// Processes a reply from mDNS service, blocking until there is one
     pub fn process_result(&self) -> ffi::DNSServiceErrorType {
-        unsafe {
-            ffi::DNSServiceProcessResult(self.raw)
-        }
+        unsafe { ffi::DNSServiceProcessResult(self.raw) }
     }
 
     //     /// returns true if the socket has data and process_result() should be called
@@ -128,19 +134,30 @@ impl DNSServiceBrowser {
     // }
 
     pub fn start<F: 'static>(&mut self, callback: F) -> Result<(), DNSServiceError>
-        where F: Fn(Result<Service, DNSServiceError>) -> ()
+    where
+        F: Fn(Result<Service, DNSServiceError>) -> (),
     {
         // TODO: figure out if we can have non-'static callback
         self.reply_callback = Box::new(callback);
         unsafe {
             let c_domain: Option<CString>;
             if let Some(d) = &self.domain {
-                c_domain = Some(CString::new(d.as_str()).map_err(|_| DNSServiceError::InvalidString)?);
+                c_domain =
+                    Some(CString::new(d.as_str()).map_err(|_| DNSServiceError::InvalidString)?);
             } else {
                 c_domain = None;
             }
-            let service_type = CString::new(self.regtype.as_str()).map_err(|_| DNSServiceError::InvalidString)?;
-            ffi::DNSServiceBrowse(&mut self.raw as *mut _, 0, 0, service_type.as_ptr(), c_domain.map_or(ptr::null_mut(), |d| d.as_ptr()), Some(DNSServiceBrowser::reply_callback), self.void_ptr());
+            let service_type =
+                CString::new(self.regtype.as_str()).map_err(|_| DNSServiceError::InvalidString)?;
+            ffi::DNSServiceBrowse(
+                &mut self.raw as *mut _,
+                0,
+                0,
+                service_type.as_ptr(),
+                c_domain.map_or(ptr::null_mut(), |d| d.as_ptr()),
+                Some(DNSServiceBrowser::reply_callback),
+                self.void_ptr(),
+            );
             Ok(())
         }
     }
