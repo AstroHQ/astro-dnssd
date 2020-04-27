@@ -1,8 +1,8 @@
 # Astro DNS-SD (Rust Wrapper for Bonjour/DNS-SD APIs)
 
-My attempt to learn wrapping C APIs in Rust, and aim for a minimal but friendly safe wrapper around dns-sd(Bonjour, mDNS, Zeroconf DNS) APIs.
+Minimal but friendly safe wrapper around dns-sd(Bonjour, mDNS, Zeroconf DNS) APIs.
 
-## Status
+## Features
 
 ### Complete
 
@@ -23,6 +23,26 @@ My attempt to learn wrapping C APIs in Rust, and aim for a minimal but friendly 
 - Documentation
 - Pure Rust TXT code?
 - Interior mutability? (Can we reduce the &mut arguments some?)
+
+## Example
+
+```rust
+    let mut txt = TXTRecord::new();
+    let _ = txt.insert("s", Some("open"));
+    let mut service = DNSServiceBuilder::new("_rust._tcp")
+        .with_port(2048)
+        .with_name("MyRustService")
+        .with_txt_record(txt)
+        .build()
+        .unwrap();
+    let _result = service.register(|reply| match reply {
+        Ok(reply) => println!("Successful reply: {:?}", reply),
+        Err(e) => println!("Error registering: {:?}", e),
+    });
+    loop {
+        service.process_result();
+    }
+```
 
 ## License
 

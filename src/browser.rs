@@ -1,3 +1,5 @@
+//! Module containing code related to browsing/searching for services
+
 use crate::ffi;
 use crate::DNSServiceError;
 use std::ffi::{c_void, CStr, CString};
@@ -5,31 +7,39 @@ use std::mem;
 use std::os::raw::c_char;
 use std::ptr;
 
+/// Encapsulates information about a service
 pub struct Service {
+    /// Name of service, usually a user friendly name
     pub name: String,
+    /// Registration type, i.e. _http._tcp.
     pub regtype: String,
+    /// Interface index (unsure what this is for)
     pub interface_index: u32,
+    /// Domain service is on, typically local.
     pub domain: String,
 }
 
+/// Builder for creating a browser, allowing optionally specifying a domain with chaining (maybe builder is excessive)
 pub struct ServiceBrowserBuilder {
     regtype: String,
     domain: Option<String>,
 }
 
 impl ServiceBrowserBuilder {
+    /// Creates new service browser for given service type, i.e. ._http._tcp.
     pub fn new(regtype: &str) -> ServiceBrowserBuilder {
         ServiceBrowserBuilder {
             regtype: String::from(regtype),
             domain: None,
         }
     }
-
+    /// Adds a specified domain to browser's search
     pub fn with_domain(mut self, domain: &str) -> ServiceBrowserBuilder {
         self.domain = Some(String::from(domain));
         self
     }
 
+    /// Creates browser and starts searching,
     pub fn build(self) -> Result<DNSServiceBrowser, DNSServiceError> {
         unsafe {
             let service = DNSServiceBrowser {
@@ -44,8 +54,11 @@ impl ServiceBrowserBuilder {
     }
 }
 
+/// Main service browser, calls callback upon discovery of service
 pub struct DNSServiceBrowser {
+    /// Type to search for, i.e. ._http._tcp.
     pub regtype: String,
+    /// Domain to search in, default is .local
     pub domain: Option<String>,
     raw: ffi::DNSServiceRef,
     reply_callback: Box<dyn Fn(Result<Service, DNSServiceError>) -> ()>,
@@ -133,6 +146,7 @@ impl DNSServiceBrowser {
     //     }
     // }
 
+    /// Starts browser with given callback that'll be called upon discovery
     pub fn start<F: 'static>(&mut self, callback: F) -> Result<(), DNSServiceError>
     where
         F: Fn(Result<Service, DNSServiceError>) -> (),

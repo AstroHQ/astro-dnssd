@@ -1,3 +1,5 @@
+//! Registration of dns-sd services
+
 use crate::ffi::{
     kDNSServiceErr_NoError, DNSServiceErrorType, DNSServiceFlags, DNSServiceProcessResult,
     DNSServiceRef, DNSServiceRefDeallocate, DNSServiceRefSockFD, DNSServiceRegister,
@@ -22,11 +24,17 @@ pub struct DNSServiceBuilder {
 
 /// DNS-SD Service for registration use
 pub struct DNSService {
+    /// Type of service, like ._http._tcp.
     pub regtype: String,
+    /// Name to advertise, sometimes name of device
     pub name: Option<String>,
+    /// Domain, usually .local by default
     pub domain: Option<String>,
+    /// Optional host, uses machine's default hostname by default
     pub host: Option<String>,
+    /// Port service is listening on
     pub port: u16,
+    /// TXT record for service if any
     pub txt: Option<TXTRecord>,
     raw: DNSServiceRef,
     reply_callback: Box<dyn Fn(Result<DNSServiceRegisterReply, DNSServiceError>) -> ()>,
@@ -35,8 +43,11 @@ pub struct DNSService {
 /// Reply information upon successful registration
 #[derive(Debug)]
 pub struct DNSServiceRegisterReply {
+    /// Service type of successfully registered service
     pub regtype: String,
+    /// Name of service
     pub name: String,
+    /// Domain used for successful registration
     pub domain: String,
 }
 

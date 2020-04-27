@@ -1,5 +1,5 @@
-use astro_dnssd::register::*;
-use astro_dnssd::txt::*;
+use astro_dnssd::register::DNSServiceBuilder;
+use astro_dnssd::txt::TXTRecord;
 
 fn main() {
     println!("Registering service...");
@@ -16,12 +16,6 @@ fn main() {
         Err(e) => println!("Error registering: {:?}", e),
     });
     loop {
-        // if service.has_data() {
-        // println!("Has data!");
         service.process_result();
-        // }
     }
-    // service.process_result();
-    // thread::sleep(Duration::from_secs(10));
-    // println!("Exiting");
 }

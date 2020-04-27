@@ -1,3 +1,5 @@
+//! TXT record creation & handling
+
 use crate::ffi::{
     kDNSServiceErr_NoError, TXTRecordContainsKey, TXTRecordCreate, TXTRecordDeallocate,
     TXTRecordGetBytesPtr, TXTRecordGetCount, TXTRecordGetLength, TXTRecordGetValuePtr,
