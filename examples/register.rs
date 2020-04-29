@@ -5,7 +5,7 @@ fn main() {
     println!("Registering service...");
     let mut txt = TXTRecord::new();
     let _ = txt.insert("s", Some("open"));
-    let mut service = DNSServiceBuilder::new("_rust._tcp")
+    let mut service = DNSServiceBuilder::new("_http._tcp")
         .with_port(2048)
         .with_name("MyRustService")
         .with_txt_record(txt)
