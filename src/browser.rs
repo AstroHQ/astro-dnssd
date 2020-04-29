@@ -2,9 +2,10 @@
 
 use crate::ffi;
 use crate::DNSServiceError;
-use std::collections::HashMap;
+// use std::collections::HashMap;
 use std::ffi::{c_void, CStr, CString};
 use std::mem;
+use std::net::IpAddr;
 use std::os::raw::c_char;
 use std::ptr;
 
@@ -29,7 +30,7 @@ pub enum ServiceEventType {
 }
 impl From<ffi::DNSServiceFlags> for ServiceEventType {
     fn from(flags: ffi::DNSServiceFlags) -> Self {
-        if flags & ffi::kDNSServiceFlagsAdd != 0 {
+        if flags & ffi::kDNSServiceFlagsAdd as u32 != 0 {
             ServiceEventType::Added
         } else {
             ServiceEventType::Removed
@@ -62,6 +63,75 @@ pub struct ResolvedService {
     pub port: u16,
     /// TXT record service has if any
     pub txt_record: Option<TXTHash>,
+    interface_index: u32,
+}
+
+/// Defines which IP type to resolve a host for
+pub enum ResolveIpType {
+    /// Resolve IPv4
+    V4,
+    /// Resolve IPv6
+    V6,
+}
+impl Into<ffi::DNSServiceProtocol> for ResolveIpType {
+    fn into(self) -> ffi::DNSServiceProtocol {
+        match self {
+            ResolveIpType::V4 => ffi::kDNSServiceProtocol_IPv4 as u32,
+            ResolveIpType::V6 => ffi::kDNSServiceProtocol_IPv6 as u32,
+        }
+    }
+}
+impl ResolvedService {
+    /// Resolves IP of given type for service's host
+    pub fn resolve_ip(&self, ip_type: ResolveIpType) -> Option<IpAddr> {
+        unsafe {
+            let mut sdref: ffi::DNSServiceRef = mem::zeroed();
+            /*
+            DNSServiceRef                    *sdRef,
+            DNSServiceFlags                  flags,
+            uint32_t                         interfaceIndex,
+            DNSServiceProtocol               protocol,
+            const char                       *hostname,
+            DNSServiceGetAddrInfoReply       callBack,
+            void                             *context          /* may be NULL */*/
+            let hostname = CString::new(self.full_name.as_str())
+                .map_err(|_| DNSServiceError::InvalidString)
+                .unwrap();
+            let err = ffi::DNSServiceGetAddrInfo(
+                mut_raw_ptr!(sdref),
+                0, // TODO: flags support in future
+                self.interface_index,
+                ip_type.into(),
+                hostname.as_ptr(),
+                Some(Self::resolve_callback),
+                std::ptr::null_mut(),
+            );
+            ffi::DNSServiceProcessResult(sdref);
+        }
+        None
+    }
+    /*
+    DNSServiceRef                    sdRef,
+    DNSServiceFlags                  flags,
+    uint32_t                         interfaceIndex,
+    DNSServiceErrorType              errorCode,
+    const char                       *hostname,
+    const struct sockaddr            *address,
+    uint32_t                         ttl,
+    void                             *context
+    */
+    unsafe extern "C" fn resolve_callback(
+        _sd_ref: ffi::DNSServiceRef,
+        flags: ffi::DNSServiceFlags,
+        _interface_index: u32,
+        error_code: ffi::DNSServiceErrorType,
+        hostname: *const c_char,
+        address: *const ffi::sockaddr,
+        ttl: u32,
+        context: *mut c_void,
+    ) {
+        //
+    }
 }
 
 struct PendingResolution {
@@ -109,7 +179,7 @@ impl Service {
     unsafe extern "C" fn resolve_callback(
         _sd_ref: ffi::DNSServiceRef,
         flags: ffi::DNSServiceFlags,
-        _interface_index: u32,
+        interface_index: u32,
         error_code: ffi::DNSServiceErrorType,
         full_name: *const c_char,
         host_target: *const c_char,
@@ -125,7 +195,7 @@ impl Service {
             return;
         }
         // flag if we have more records coming so we can fetch them before stopping resolution
-        context.more_coming = flags & ffi::kDNSServiceFlagsMoreComing != 0;
+        context.more_coming = flags & ffi::kDNSServiceFlagsMoreComing as u32 != 0;
         let process = || -> Result<(String, String), DNSServiceError> {
             let c_str: &CStr = CStr::from_ptr(full_name);
             let full_name: &str = c_str
@@ -138,7 +208,8 @@ impl Service {
             Ok((full_name.to_owned(), hostname.to_owned()))
         };
         let txt_record = if txt_len > 0 {
-            match TXTHash::new(std::slice::from_raw_parts(txt_record, txt_len as usize)) {
+            let data = std::slice::from_raw_parts(txt_record, txt_len as usize).to_vec();
+            match TXTHash::new(data) {
                 Ok(hash) => {
                     trace!("Got TXT: {:?}", hash);
                     Some(hash)
@@ -158,6 +229,7 @@ impl Service {
                     hostname,
                     port,
                     txt_record,
+                    interface_index,
                 };
                 trace!(
                     "{} - {} service resolved",
@@ -177,57 +249,90 @@ impl Service {
 /// Read only owned TXTRecord returned by service resolution & querying
 #[derive(Debug)]
 pub struct TXTHash {
-    hash: HashMap<String, Vec<u8>>,
+    data: Vec<u8>,
 }
 impl TXTHash {
-    /// Creates new TXTHash from given bytes, copies data
-    pub fn new<B: AsRef<[u8]>>(bytes: B) -> Result<Self, DNSServiceError> {
-        let slice = bytes.as_ref();
-        if slice.len() > u16::max_value() as usize {
-            error!(
-                "TXTHash bytes data too large, {} larger than u16 limit",
-                slice.len()
-            );
-            return Err(DNSServiceError::InvalidString);
-        }
-        let txt_len = slice.len() as u16;
-        let txt_bytes = slice.as_ptr() as *const c_void;
-        let mut hash: HashMap<String, Vec<u8>> = HashMap::new();
+    /// Creates new hash from bytes
+    pub fn new(data: Vec<u8>) -> Result<Self, DNSServiceError> {
+        Ok(TXTHash { data })
+    }
+    fn as_raw(&self) -> (u16, *const c_void) {
+        (self.data.len() as u16, self.data.as_ptr() as *const c_void)
+    }
+    /// Returns true if the given key has an entry in the TXTRecord
+    pub fn contains(&self, key: &str) -> bool {
+        let key_c = CString::new(key).unwrap();
         unsafe {
-            let total_keys = ffi::TXTRecordGetCount(txt_len, txt_bytes);
-            for i in 0..total_keys {
-                // index is u16 so we can't go over u16::max_value() but likely will end before that
-                let mut key: [c_char; 256] = mem::zeroed();
-                let mut value: [u8; u8::max_value() as usize] = mem::zeroed();
-                let mut value_len: u8 = 0;
-                let err = ffi::TXTRecordGetItemAtIndex(
-                    txt_len,
-                    txt_bytes,
-                    i,
-                    key.len() as u16,
-                    key.as_mut_ptr(),
-                    &mut value_len,
-                    value.as_mut_ptr() as *mut *const c_void,
-                );
-                trace!("Got value len: {}", value_len);
-                if err == ffi::kDNSServiceErr_NoError {
-                    let c_str: &CStr = CStr::from_ptr(key.as_ptr());
-                    let key: &str = c_str
-                        .to_str()
-                        .map_err(|_| DNSServiceError::InternalInvalidString)?;
-                    // TODO: figure out proper way to do this with a slice etc
-                    let mut data = value.to_vec();
-                    data.truncate(value_len as usize);
-                    hash.insert(key.to_owned(), data);
-                }
-                if err == ffi::kDNSServiceErr_Invalid {
-                    break;
-                }
+            let (txt_len, txt_data) = self.as_raw();
+            if ffi::TXTRecordContainsKey(txt_len, txt_data, key_c.as_ptr()) == 0 {
+                return false;
             }
         }
-        Ok(TXTHash { hash })
+        true
+    }
+    /// Returns value for given key if it exists
+    pub fn get(&self, key: &str) -> Option<Vec<u8>> {
+        let key_c = CString::new(key).unwrap();
+
+        let mut value_len: u8 = 0;
+        let (txt_len, txt_data) = self.as_raw();
+        unsafe {
+            if !self.contains(key) {
+                return None;
+            }
+            let data_ptr =
+                ffi::TXTRecordGetValuePtr(txt_len, txt_data, key_c.as_ptr(), &mut value_len);
+            let slice = std::slice::from_raw_parts(data_ptr as *const u8, value_len as usize);
+            Some(slice.to_vec())
+        }
     }
 }
+// impl Into<HashMap<String, Vec<u8>>> for TXTHash {
+//     fn into(self) -> HashMap<String, Vec<u8>> {
+//         let map = HashMap::new();
+//         let slice = &self.data[..];
+//         // if slice.len() > u16::max_value() as usize {
+//         //     error!(
+//         //         "TXTHash bytes data too large, {} larger than u16 limit",
+//         //         slice.len()
+//         //     );
+//         //     return Err(DNSServiceError::InvalidString);
+//         // }
+//         let txt_len = slice.len() as u16;
+//         let txt_bytes = slice.as_ptr() as *const c_void;
+//         let mut hash: HashMap<String, Vec<u8>> = HashMap::new();
+//         unsafe {
+//             let total_keys = ffi::TXTRecordGetCount(txt_len, txt_bytes);
+//             for i in 0..total_keys {
+//                 // index is u16 so we can't go over u16::max_value() but likely will end before that
+//                 let mut key: [c_char; 256] = mem::zeroed();
+//                 let mut value: [u8; u8::max_value() as usize] = mem::zeroed();
+//                 let mut value_len: u8 = 0;
+//                 let err = ffi::TXTRecordGetItemAtIndex(
+//                     txt_len,
+//                     txt_bytes,
+//                     i,
+//                     key.len() as u16,
+//                     key.as_mut_ptr(),
+//                     &mut value_len,
+//                     value.as_mut_ptr() as *mut *const c_void,
+//                 );
+//                 trace!("Got value len: {}", value_len);
+//                 if err == ffi::kDNSServiceErr_NoError {
+//                     let c_str: &CStr = CStr::from_ptr(key.as_ptr());
+//                     let key: &str = c_str.to_str().unwrap();
+//                     // TODO: figure out proper way to do this with a slice etc
+//                     let data = (&value[0..value_len as usize]).to_vec();
+//                     hash.insert(key.to_owned(), data);
+//                 }
+//                 if err == ffi::kDNSServiceErr_Invalid {
+//                     break;
+//                 }
+//             }
+//         }
+//         map
+//     }
+// }
 
 /// Builder for creating a browser, allowing optionally specifying a domain with chaining (maybe builder is excessive)
 pub struct ServiceBrowserBuilder {

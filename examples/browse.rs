@@ -17,7 +17,10 @@ fn main() {
                 event, service.interface_index, service.name, service.regtype, service.domain
             );
             let results = service.resolve();
-            info!("Resolution result: {:?}", results);
+            for r in results.unwrap() {
+                let path = r.txt_record.as_ref().unwrap().get("s");
+                info!("Resolved service: {:?} path: {:?}", r, path);
+            }
         }
         Err(e) => error!("Error: {:?}", e),
     });

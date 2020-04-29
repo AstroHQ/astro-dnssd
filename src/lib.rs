@@ -2,8 +2,17 @@
 
 #![forbid(missing_docs)]
 
+use std::error::Error;
+use std::fmt;
+
 pub mod browser;
-mod ffi;
+mod ffi {
+    #![allow(non_upper_case_globals)]
+    #![allow(non_camel_case_types)]
+    #![allow(non_snake_case)]
+    #![allow(dead_code)]
+    include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+}
 pub mod register;
 pub mod txt;
 
@@ -19,4 +28,12 @@ pub enum DNSServiceError {
     InternalInvalidString,
     /// Error from DNSSD service
     ServiceError(i32),
+}
+impl fmt::Display for DNSServiceError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "")
+    }
+}
+impl Error for DNSServiceError {
+    // fn source(&self) -> Option<&(dyn Error + 'static)> { }
 }
