@@ -43,3 +43,6 @@ impl fmt::Display for DNSServiceError {
 impl Error for DNSServiceError {
     // fn source(&self) -> Option<&(dyn Error + 'static)> { }
 }
+
+/// Result type for dns-sd fallible returns
+pub type Result<T> = std::result::Result<T, DNSServiceError>;

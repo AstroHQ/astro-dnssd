@@ -3,6 +3,7 @@
 use crate::ffi;
 use crate::DNSServiceError;
 // use std::collections::HashMap;
+use crate::Result;
 use std::ffi::{c_void, CStr, CString};
 use std::mem;
 use std::net::{SocketAddr, ToSocketAddrs};
@@ -88,7 +89,7 @@ impl Default for PendingResolution {
 
 impl Service {
     /// Resolves service to get it's hostname, port, etc. Blocks until response is received
-    pub fn resolve(&mut self) -> Result<Vec<ResolvedService>, DNSServiceError> {
+    pub fn resolve(&mut self) -> Result<Vec<ResolvedService>> {
         let mut sdref: ffi::DNSServiceRef = unsafe { mem::zeroed() };
         let regtype =
             CString::new(self.regtype.as_str()).map_err(|_| DNSServiceError::InvalidString)?;
@@ -135,7 +136,7 @@ impl Service {
         }
         // flag if we have more records coming so we can fetch them before stopping resolution
         context.more_coming = flags & ffi::kDNSServiceFlagsMoreComing as u32 != 0;
-        let process = || -> Result<(String, String), DNSServiceError> {
+        let process = || -> Result<(String, String)> {
             let c_str: &CStr = CStr::from_ptr(full_name);
             let full_name: &str = c_str
                 .to_str()
@@ -192,37 +193,37 @@ pub struct TXTHash {
 }
 impl TXTHash {
     /// Creates new hash from bytes
-    pub fn new(data: Vec<u8>) -> Result<Self, DNSServiceError> {
+    pub fn new(data: Vec<u8>) -> Result<Self> {
         Ok(TXTHash { data })
     }
     fn as_raw(&self) -> (u16, *const c_void) {
         (self.data.len() as u16, self.data.as_ptr() as *const c_void)
     }
     /// Returns true if the given key has an entry in the TXTRecord
-    pub fn contains(&self, key: &str) -> bool {
-        let key_c = CString::new(key).unwrap();
+    pub fn contains(&self, key: &str) -> Result<bool> {
+        let key_c = CString::new(key).map_err(|_| DNSServiceError::InvalidString)?;
         unsafe {
             let (txt_len, txt_data) = self.as_raw();
-            if ffi::TXTRecordContainsKey(txt_len, txt_data, key_c.as_ptr()) == 0 {
-                return false;
+            if ffi::TXTRecordContainsKey(txt_len, txt_data, key_c.as_ptr()) == 1 {
+                return Ok(true);
             }
         }
-        true
+        Ok(false)
     }
     /// Returns value for given key if it exists
-    pub fn get(&self, key: &str) -> Option<Vec<u8>> {
-        let key_c = CString::new(key).unwrap();
+    pub fn get(&self, key: &str) -> Result<Option<Vec<u8>>> {
+        let key_c = CString::new(key).map_err(|_| DNSServiceError::InvalidString)?;
 
         let mut value_len: u8 = 0;
         let (txt_len, txt_data) = self.as_raw();
         unsafe {
-            if !self.contains(key) {
-                return None;
+            if !self.contains(key)? {
+                return Ok(None);
             }
             let data_ptr =
                 ffi::TXTRecordGetValuePtr(txt_len, txt_data, key_c.as_ptr(), &mut value_len);
             let slice = std::slice::from_raw_parts(data_ptr as *const u8, value_len as usize);
-            Some(slice.to_vec())
+            Ok(Some(slice.to_vec()))
         }
     }
 }
@@ -294,7 +295,7 @@ impl ServiceBrowserBuilder {
     }
 
     /// Creates browser and starts searching,
-    pub fn build(self) -> Result<DNSServiceBrowser, DNSServiceError> {
+    pub fn build(self) -> Result<DNSServiceBrowser> {
         unsafe {
             let service = DNSServiceBrowser {
                 regtype: self.regtype,
@@ -315,7 +316,7 @@ pub struct DNSServiceBrowser {
     /// Domain to search in, default is .local
     pub domain: Option<String>,
     raw: ffi::DNSServiceRef,
-    reply_callback: Box<dyn Fn(Result<Service, DNSServiceError>) -> ()>,
+    reply_callback: Box<dyn Fn(Result<Service>) -> ()>,
 }
 
 impl DNSServiceBrowser {
@@ -338,7 +339,7 @@ impl DNSServiceBrowser {
         }
 
         // build Strings from c_char
-        let process = || -> Result<(String, String, String), DNSServiceError> {
+        let process = || -> Result<(String, String, String)> {
             let c_str: &CStr = CStr::from_ptr(service_name);
             let service_name: &str = c_str
                 .to_str()
@@ -398,9 +399,9 @@ impl DNSServiceBrowser {
     // }
 
     /// Starts browser with given callback that'll be called upon discovery
-    pub fn start<F: 'static>(&mut self, callback: F) -> Result<(), DNSServiceError>
+    pub fn start<F: 'static>(&mut self, callback: F) -> Result<()>
     where
-        F: Fn(Result<Service, DNSServiceError>) -> (),
+        F: Fn(Result<Service>) -> (),
     {
         // TODO: figure out if we can have non-'static callback
         self.reply_callback = Box::new(callback);
