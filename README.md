@@ -1,6 +1,9 @@
 # Astro DNS-SD
 
 [![Build Status](https://dev.azure.com/AstroHQ/astro-dnssd/_apis/build/status/AstroHQ.astro-dnssd?branchName=master)](https://dev.azure.com/AstroHQ/astro-dnssd/_build/latest?definitionId=1&branchName=master)
+[![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](https://github.com/AstroHQ/astro-dnssd)
+[![Cargo](https://img.shields.io/crates/v/astro-dnssd.svg)](https://crates.io/crates/astro-dnssd)
+[![Documentation](https://docs.rs/astro-dnssd/badge.svg)](https://docs.rs/astro-dnssd)
 
 Minimal but friendly safe wrapper around dns-sd(Bonjour, mDNS, Zeroconf DNS) APIs.
 
