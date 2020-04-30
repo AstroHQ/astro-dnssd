@@ -69,7 +69,7 @@ impl ToSocketAddrs for ResolvedService {
     type Iter = std::vec::IntoIter<SocketAddr>;
     /// Leverages Rust's ToSocketAddrs to resolve service hostname & port, host needs integrated bonjour support to work
     fn to_socket_addrs(&self) -> std::io::Result<Self::Iter> {
-        format!("{}:{}", self.hostname, self.port).to_socket_addrs()
+        (self.hostname.as_str(), self.port).to_socket_addrs()
     }
 }
 
