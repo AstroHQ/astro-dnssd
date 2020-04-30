@@ -66,11 +66,10 @@ pub struct ResolvedService {
     interface_index: u32,
 }
 impl ToSocketAddrs for ResolvedService {
-    type Iter = Box<dyn Iterator<Item = SocketAddr>>;
+    type Iter = std::vec::IntoIter<SocketAddr>;
+    /// Leverages Rust's ToSocketAddrs to resolve service hostname & port, host needs integrated bonjour support to work
     fn to_socket_addrs(&self) -> std::io::Result<Self::Iter> {
-        Ok(Box::new(
-            format!("{}:{}", self.hostname, self.port).to_socket_addrs()?,
-        ))
+        format!("{}:{}", self.hostname, self.port).to_socket_addrs()
     }
 }
 
