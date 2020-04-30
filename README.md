@@ -1,5 +1,7 @@
 # Astro DNS-SD
 
+[![Build Status](https://dev.azure.com/AstroHQ/astro-dnssd/_apis/build/status/AstroHQ.astro-dnssd?branchName=master)](https://dev.azure.com/AstroHQ/astro-dnssd/_build/latest?definitionId=1&branchName=master)
+
 Minimal but friendly safe wrapper around dns-sd(Bonjour, mDNS, Zeroconf DNS) APIs.
 
 ## Features
@@ -50,10 +52,10 @@ Minimal but friendly safe wrapper around dns-sd(Bonjour, mDNS, Zeroconf DNS) API
 
 Licensed under either of
 
- * Apache License, Version 2.0
-   ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
- * MIT license
-   ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+- Apache License, Version 2.0
+   ([LICENSE-APACHE](LICENSE-APACHE) or [http://www.apache.org/licenses/LICENSE-2.0](http://www.apache.org/licenses/LICENSE-2.0))
+- MIT license
+   ([LICENSE-MIT](LICENSE-MIT) or [http://opensource.org/licenses/MIT](http://opensource.org/licenses/MIT))
 
 at your option.
 

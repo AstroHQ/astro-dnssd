@@ -11,9 +11,9 @@ strategy:
     mac-stable:
       imageName: 'macos-10.15'
       rustup_toolchain: stable
-    # linux-stable:
-    #   imageName: 'ubuntu-18.04'
-    #   rustup_toolchain: stable
+    linux-stable:
+      imageName: 'ubuntu-18.04'
+      rustup_toolchain: stable
 
 pool:
   vmImage: $(imageName)
