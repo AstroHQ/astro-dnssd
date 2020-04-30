@@ -31,7 +31,13 @@ pub enum DNSServiceError {
 }
 impl fmt::Display for DNSServiceError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "")
+        match self {
+            DNSServiceError::InvalidString => {
+                write!(f, "Invalid string argument, must be C-string compatible")
+            }
+            DNSServiceError::InternalInvalidString => write!(f, "Invalid string received from FFI"),
+            DNSServiceError::ServiceError(e) => write!(f, "Service error: {}", e),
+        }
     }
 }
 impl Error for DNSServiceError {
