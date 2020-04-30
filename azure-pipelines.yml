@@ -19,9 +19,10 @@ pool:
   vmImage: $(imageName)
 
 steps:
+  # TODO: figure out how we can automate installing Bonjour SDK
   - script: |
       choco install bonjour
-    displayName: Windows install clang
+    displayName: Install Windows dependencies
     condition: eq( variables['Agent.OS'], 'Windows_NT' )
   - script: |
       curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain $RUSTUP_TOOLCHAIN
@@ -42,4 +43,4 @@ steps:
     displayName: Cargo build
   - script: cargo test --all
     displayName: Cargo test
-    condition: ne( variables['Agent.OS'], 'linux' ) # disable linux testing until we fix it
+    condition: ne( variables['Agent.OS'], 'Linux' ) # disable linux testing until we fix it
