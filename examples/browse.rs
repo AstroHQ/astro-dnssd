@@ -1,6 +1,7 @@
 use astro_dnssd::browser::*;
 use env_logger::Env;
 use log::{error, info};
+use std::net::ToSocketAddrs;
 
 fn main() {
     env_logger::from_env(Env::default().default_filter_or("trace")).init();
@@ -19,6 +20,10 @@ fn main() {
             let results = service.resolve();
             for r in results.unwrap() {
                 let path = r.txt_record.as_ref().unwrap().get("s");
+                let addrs_iter = r.to_socket_addrs().unwrap();
+                for addr in addrs_iter {
+                    info!("Addr: {}", addr);
+                }
                 info!("Resolved service: {:?} path: {:?}", r, path);
             }
         }

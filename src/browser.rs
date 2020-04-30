@@ -5,7 +5,7 @@ use crate::DNSServiceError;
 // use std::collections::HashMap;
 use std::ffi::{c_void, CStr, CString};
 use std::mem;
-use std::net::IpAddr;
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::os::raw::c_char;
 use std::ptr;
 
@@ -65,6 +65,14 @@ pub struct ResolvedService {
     pub txt_record: Option<TXTHash>,
     interface_index: u32,
 }
+impl ToSocketAddrs for ResolvedService {
+    type Iter = Box<dyn Iterator<Item = SocketAddr>>;
+    fn to_socket_addrs(&self) -> std::io::Result<Self::Iter> {
+        Ok(Box::new(
+            format!("{}:{}", self.hostname, self.port).to_socket_addrs()?,
+        ))
+    }
+}
 
 /// Defines which IP type to resolve a host for
 pub enum ResolveIpType {
@@ -79,58 +87,6 @@ impl Into<ffi::DNSServiceProtocol> for ResolveIpType {
             ResolveIpType::V4 => ffi::kDNSServiceProtocol_IPv4 as u32,
             ResolveIpType::V6 => ffi::kDNSServiceProtocol_IPv6 as u32,
         }
-    }
-}
-impl ResolvedService {
-    /// Resolves IP of given type for service's host
-    pub fn resolve_ip(&self, ip_type: ResolveIpType) -> Option<IpAddr> {
-        unsafe {
-            let mut sdref: ffi::DNSServiceRef = mem::zeroed();
-            /*
-            DNSServiceRef                    *sdRef,
-            DNSServiceFlags                  flags,
-            uint32_t                         interfaceIndex,
-            DNSServiceProtocol               protocol,
-            const char                       *hostname,
-            DNSServiceGetAddrInfoReply       callBack,
-            void                             *context          /* may be NULL */*/
-            let hostname = CString::new(self.full_name.as_str())
-                .map_err(|_| DNSServiceError::InvalidString)
-                .unwrap();
-            let err = ffi::DNSServiceGetAddrInfo(
-                mut_raw_ptr!(sdref),
-                0, // TODO: flags support in future
-                self.interface_index,
-                ip_type.into(),
-                hostname.as_ptr(),
-                Some(Self::resolve_callback),
-                std::ptr::null_mut(),
-            );
-            ffi::DNSServiceProcessResult(sdref);
-        }
-        None
-    }
-    /*
-    DNSServiceRef                    sdRef,
-    DNSServiceFlags                  flags,
-    uint32_t                         interfaceIndex,
-    DNSServiceErrorType              errorCode,
-    const char                       *hostname,
-    const struct sockaddr            *address,
-    uint32_t                         ttl,
-    void                             *context
-    */
-    unsafe extern "C" fn resolve_callback(
-        _sd_ref: ffi::DNSServiceRef,
-        flags: ffi::DNSServiceFlags,
-        _interface_index: u32,
-        error_code: ffi::DNSServiceErrorType,
-        hostname: *const c_char,
-        address: *const ffi::sockaddr,
-        ttl: u32,
-        context: *mut c_void,
-    ) {
-        //
     }
 }
 
@@ -227,7 +183,7 @@ impl Service {
                 let service = ResolvedService {
                     full_name,
                     hostname,
-                    port,
+                    port: u16::from_be(port),
                     txt_record,
                     interface_index,
                 };
