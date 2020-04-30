@@ -73,22 +73,6 @@ impl ToSocketAddrs for ResolvedService {
     }
 }
 
-/// Defines which IP type to resolve a host for
-pub enum ResolveIpType {
-    /// Resolve IPv4
-    V4,
-    /// Resolve IPv6
-    V6,
-}
-impl Into<ffi::DNSServiceProtocol> for ResolveIpType {
-    fn into(self) -> ffi::DNSServiceProtocol {
-        match self {
-            ResolveIpType::V4 => ffi::kDNSServiceProtocol_IPv4 as u32,
-            ResolveIpType::V6 => ffi::kDNSServiceProtocol_IPv6 as u32,
-        }
-    }
-}
-
 struct PendingResolution {
     more_coming: bool,
     results: Vec<ResolvedService>,

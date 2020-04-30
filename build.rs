@@ -20,16 +20,16 @@ fn find_avahi_compat_dns_sd() {
     }
 }
 
-fn dns_sd_include_path() -> Option<PathBuf> {
+fn dns_sd_include_path() -> PathBuf {
     if cfg_family_is("windows") {
         match var("BONJOUR_SDK_HOME") {
 			Ok(path) =>
-                Some(PathBuf::from(path).join("Include")),
+                PathBuf::from(path).join("Include"),
 			Err(e) => panic!("Can't find Bonjour SDK (download from https://developer.apple.com/bonjour/ ) at BONJOUR_SDK_HOME: {}", e),
 		}
     } else {
-        // TODO: apple & linux platforms
-        None
+        // just do . for linux/macOS since we should have it via default include paths
+        PathBuf::from(".")
     }
 }
 
@@ -63,7 +63,7 @@ fn generate_bindings() {
         // The input header we would like to generate
         // bindings for.
         .header_contents("wrapper.h", "#include <dns_sd.h>")
-        .clang_arg(format!("-I{}", dns_sd_include_path().unwrap().display()))
+        .clang_arg(format!("-I{}", dns_sd_include_path().display()))
         .whitelist_type("TXTRecord(.*)")
         // .whitelist_type("AOBoundedQueue(.*)")
         // .whitelist_type("AOCompressedTile(.*)")
