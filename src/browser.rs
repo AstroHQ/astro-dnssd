@@ -204,11 +204,9 @@ impl TXTHash {
         let key_c = CString::new(key).map_err(|_| DNSServiceError::InvalidString)?;
         unsafe {
             let (txt_len, txt_data) = self.as_raw();
-            if ffi::TXTRecordContainsKey(txt_len, txt_data, key_c.as_ptr()) == 1 {
-                return Ok(true);
-            }
+            let contains_key = ffi::TXTRecordContainsKey(txt_len, txt_data, key_c.as_ptr()) == 1;
+            Ok(contains_key)
         }
-        Ok(false)
     }
     /// Returns value for given key if it exists
     pub fn get(&self, key: &str) -> Result<Option<Vec<u8>>> {
