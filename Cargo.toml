@@ -1,6 +1,6 @@
 [package]
 name = "astro-dnssd"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Jeremy Knope <jeremy@astropad.com>"]
 description = "Simple & safe DNS-SD wrapper"
 keywords = ["dns-sd", "dnssd", "bonjour", "zeroconf", "mdns"]
@@ -9,9 +9,9 @@ repository = "https://github.com/AstroHQ/astro-dnssd"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 edition = "2018"
-build = "build.rs"
-
-[build-dependencies]
-pkg-config = "0.3.9"
 
 [dependencies]
+log = "0.4.8"
+
+[dev-dependencies]
+env_logger = "0.7"

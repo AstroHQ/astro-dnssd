@@ -6,7 +6,7 @@ use crate::ffi::{
     DNSServiceUpdateRecord,
 };
 use crate::txt::TXTRecord;
-use crate::DNSServiceError;
+use crate::{DNSServiceError, Result};
 use std::ffi::{c_void, CStr, CString};
 use std::mem;
 use std::os::raw::c_char;
@@ -37,7 +37,7 @@ pub struct DNSService {
     /// TXT record for service if any
     pub txt: Option<TXTRecord>,
     raw: DNSServiceRef,
-    reply_callback: Box<dyn Fn(Result<DNSServiceRegisterReply, DNSServiceError>) -> ()>,
+    reply_callback: Box<dyn Fn(Result<DNSServiceRegisterReply>) -> ()>,
 }
 
 /// Reply information upon successful registration
@@ -96,7 +96,7 @@ impl DNSServiceBuilder {
     }
 
     /// Builds DNSService
-    pub fn build(self) -> Result<DNSService, DNSServiceError> {
+    pub fn build(self) -> Result<DNSService> {
         unsafe {
             let service = DNSService {
                 regtype: self.regtype,
@@ -154,7 +154,7 @@ impl DNSService {
         context: *mut c_void,
     ) {
         let context: &mut DNSService = &mut *(context as *mut DNSService);
-        let process = || -> Result<(String, String, String), DNSServiceError> {
+        let process = || -> Result<(String, String, String)> {
             let c_str: &CStr = CStr::from_ptr(name);
             let service_name: &str = c_str
                 .to_str()
@@ -193,9 +193,9 @@ impl DNSService {
     }
 
     /// Registers service with mDNS responder, calling callback when a reply is received (requires calling process_result() when socket is ready)
-    pub fn register<F: 'static>(&mut self, callback: F) -> Result<(), DNSServiceError>
+    pub fn register<F: 'static>(&mut self, callback: F) -> Result<()>
     where
-        F: Fn(Result<DNSServiceRegisterReply, DNSServiceError>) -> (),
+        F: Fn(Result<DNSServiceRegisterReply>) -> (),
     {
         // TODO: figure out if we can have non-'static callback
         self.reply_callback = Box::new(callback);
@@ -236,7 +236,7 @@ impl DNSService {
     }
 
     /// Updates service's primary TXT record, removing it if provided None
-    pub fn update_txt_record(&mut self, mut txt: Option<TXTRecord>) -> Result<(), DNSServiceError> {
+    pub fn update_txt_record(&mut self, mut txt: Option<TXTRecord>) -> Result<()> {
         unsafe {
             let (txt_record, txt_len) = match &mut txt {
                 Some(txt) => (txt.raw_bytes_ptr(), txt.raw_bytes_len()),
