@@ -28,9 +28,9 @@ fn dns_sd_lib_path() -> Option<PathBuf> {
             arch => panic!("unsupported target architecture: {:?}", arch),
         };
         match var("BONJOUR_SDK_HOME") {
-			Ok(path) => Some(PathBuf::from(path).join("Lib").join(platform)),
-			Err(e) => panic!("Can't find Bonjour SDK (download from https://developer.apple.com/bonjour/ ) at BONJOUR_SDK_HOME: {}", e),
-		}
+            Ok(path) => Some(PathBuf::from(path).join("Lib").join(platform)),
+            Err(e) => panic!("Can't find Bonjour SDK (download from https://developer.apple.com/bonjour/ ) at BONJOUR_SDK_HOME: {}", e),
+        }
     } else {
         None
     }
