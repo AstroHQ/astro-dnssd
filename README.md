@@ -7,6 +7,8 @@
 
 Minimal but friendly safe wrapper around dns-sd(Bonjour, mDNS, Zeroconf DNS) APIs.
 
+[Documentation](https://crates.io/crates/astro-dnssd)
+
 ## Features
 
 ### Complete
@@ -28,6 +30,15 @@ Minimal but friendly safe wrapper around dns-sd(Bonjour, mDNS, Zeroconf DNS) API
 - Documentation
 - Pure Rust TXT code?
 - Interior mutability? (Can we reduce the &mut arguments some?)
+
+## Build Requirements
+`astro-dnssd` requires the Bonjour SDK.
+
+- **Windows:** Download the SDK [here]( https://developer.apple.com/bonjour/)
+- **Linux:** Install `avahi-compat-libdns_sd` for your distro of choice.
+
+## Technical Background
+This [website](http://www.dns-sd.org/) provides a good overview of the DNS-SD protocol.
 
 ## Example
 
