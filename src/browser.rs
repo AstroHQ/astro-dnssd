@@ -380,6 +380,10 @@ impl DNSServiceBrowser {
 
     /// Processes a reply from mDNS service, blocking until there is one
     pub fn process_result(&self) -> ffi::DNSServiceErrorType {
+        // shouldn't get here but to be safe for now
+        if self.raw.is_null() {
+            return ffi::kDNSServiceErr_Invalid;
+        }
         unsafe { ffi::DNSServiceProcessResult(self.raw) }
     }
 
@@ -413,7 +417,7 @@ impl DNSServiceBrowser {
             }
             let service_type =
                 CString::new(self.regtype.as_str()).map_err(|_| DNSServiceError::InvalidString)?;
-            ffi::DNSServiceBrowse(
+            let r = ffi::DNSServiceBrowse(
                 &mut self.raw as *mut _,
                 0,
                 0,
@@ -422,6 +426,10 @@ impl DNSServiceBrowser {
                 Some(DNSServiceBrowser::reply_callback),
                 mut_void_ptr!(self),
             );
+            if r != ffi::kDNSServiceErr_NoError {
+                error!("DNSServiceBrowser error: {}", r);
+                return Err(DNSServiceError::ServiceError(r));
+            }
             Ok(())
         }
     }
