@@ -392,7 +392,7 @@ impl DNSServiceBrowser {
     /// returns true if the socket has data and process_result() should be called
     #[cfg(feature = "non-blocking")]
     pub fn has_data(&self, timeout: Duration) -> Result<bool> {
-        let socket = unsafe { ffi::DNSServiceRefSockFD(self.raw) } as usize;
+        let socket = unsafe { ffi::DNSServiceRefSockFD(self.raw) } as _;
         crate::non_blocking::socket_is_ready(socket, timeout)
         // unsafe {
         //     let fd = self.socket();
