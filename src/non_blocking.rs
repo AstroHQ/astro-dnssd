@@ -38,23 +38,28 @@ mod os {
 }
 #[cfg(not(target_os = "windows"))]
 mod os {
-    pub fn socket_is_ready(socket: u32, timeout: Duration) -> Result<bool> {
-        // unsafe {
-        //     let fd = self.socket();
-        //     let mut timeout = libc::timeval { tv_sec: 5, tv_usec: 0 };
-        //     let mut read_set = mem::uninitialized();
-        //     libc::FD_ZERO(&mut read_set);
-        //     libc::FD_SET(fd, &mut read_set);
-        //     libc::select(fd + 1, &mut read_set, ptr::null_mut(), ptr::null_mut(), &mut timeout);
-        //     libc::FD_ISSET(fd, &mut read_set)
-        // }
+    use super::*;
+    pub fn socket_is_ready(socket: i32, timeout: Duration) -> Result<bool> {
+        unsafe {
+            let fd = socket;
+            let mut timeout = libc::timeval {
+                tv_sec: timeout.as_secs() as i64,
+                tv_usec: timeout.as_micros() as i32,
+            };
+            let mut read_set = std::mem::zeroed();
+            libc::FD_ZERO(&mut read_set);
+            libc::FD_SET(fd, &mut read_set);
+            libc::select(
+                fd + 1,
+                &mut read_set,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                &mut timeout,
+            );
+            return Ok(libc::FD_ISSET(fd, &mut read_set));
+        }
+        // Ok(false)
     }
 }
 
-#[cfg(target_os = "windows")]
-pub(crate) type Socket = winapi::um::winsock2::SOCKET;
-
-pub(crate) fn socket_is_ready(socket: Socket, timeout: Duration) -> Result<bool> {
-    #[cfg(target_os = "windows")]
-    os::socket_is_ready(socket, timeout)
-}
+pub use os::socket_is_ready;

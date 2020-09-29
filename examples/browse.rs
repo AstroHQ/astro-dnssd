@@ -32,15 +32,16 @@ fn main() {
     loop {
         match browser.has_data(std::time::Duration::from_millis(500)) {
             Ok(true) => {
-                println!("Has data!");
+                info!("Has data!");
                 browser.process_result();
+                info!("===== Data done processing");
             }
             Ok(false) => {
-                println!("No data yet...");
+                info!("No data yet...");
                 std::thread::sleep(std::time::Duration::from_millis(500));
             }
             Err(e) => {
-                println!("Error checking for data: {}", e);
+                error!("Error checking for data: {}", e);
                 break;
             }
         }
