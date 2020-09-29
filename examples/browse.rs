@@ -30,10 +30,20 @@ fn main() {
         Err(e) => error!("Error: {:?}", e),
     });
     loop {
-        // if browser.has_data() {
-        //     println!("Has data!");
-        browser.process_result();
-        // }
+        match browser.has_data(std::time::Duration::from_millis(500)) {
+            Ok(true) => {
+                println!("Has data!");
+                browser.process_result();
+            }
+            Ok(false) => {
+                println!("No data yet...");
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
+            Err(e) => {
+                println!("Error checking for data: {}", e);
+                break;
+            }
+        }
     }
 
     // thread::sleep(Duration::from_secs(10));
