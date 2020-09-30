@@ -6,7 +6,7 @@ use std::net::ToSocketAddrs;
 fn main() {
     env_logger::from_env(Env::default().default_filter_or("trace")).init();
     info!("Starting browser...");
-    let mut browser = ServiceBrowserBuilder::new("_http._tcp").build().unwrap();
+    let mut browser = ServiceBrowserBuilder::new("_http._tcp").build();
     let _result = browser.start(|result| match result {
         Ok(mut service) => {
             let event = match service.event_type {
