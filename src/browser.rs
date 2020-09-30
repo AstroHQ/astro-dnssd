@@ -295,16 +295,15 @@ impl ServiceBrowserBuilder {
     }
 
     /// Creates browser and starts searching,
-    pub fn build(self) -> Result<DNSServiceBrowser> {
+    pub fn build(self) -> DNSServiceBrowser {
         unsafe {
-            let service = DNSServiceBrowser {
+            DNSServiceBrowser {
                 regtype: self.regtype,
                 domain: self.domain,
                 raw: mem::zeroed(),
                 // TODO: replace this? think it might live forever
                 reply_callback: Box::new(|_| {}),
-            };
-            Ok(service)
+            }
         }
     }
 }
@@ -447,3 +446,6 @@ impl Drop for DNSServiceBrowser {
         }
     }
 }
+
+// should be safe to send across threads, just not shared
+unsafe impl Send for DNSServiceBrowser {}
