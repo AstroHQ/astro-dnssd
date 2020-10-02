@@ -1,16 +1,14 @@
 use crate::Result;
 use std::time::Duration;
-
 #[cfg(target_os = "windows")]
 mod os {
     use super::*;
+    use winapi::um::winsock2::{WSAPoll, POLLIN, SOCKET, SOCKET_ERROR, WSAPOLLFD};
 
-    // use std::os::windows::io::RawSocket;
-    use winapi::um::winsock2::{WSAPoll, POLLRDNORM, SOCKET, SOCKET_ERROR, WSAPOLLFD};
     pub fn socket_is_ready(socket: SOCKET, timeout: Duration) -> Result<bool> {
         let info = WSAPOLLFD {
             fd: socket,
-            events: POLLRDNORM,
+            events: POLLIN,
             revents: 0,
         };
         let mut sockets = [info];
@@ -22,16 +20,19 @@ mod os {
             )
         };
         if r != SOCKET_ERROR && r > 0 {
-            let ready_to_read = info.revents & POLLRDNORM;
-            println!(
+            // let ready_to_read = info.revents & POLLIN;
+            trace!(
                 "Some ready, checking flags: {:b} vs {:b}",
-                info.revents, POLLRDNORM
+                info.revents,
+                POLLIN
             );
-            Ok(ready_to_read != 0)
+            // Ok(ready_to_read != 0)
+            // TODO: figure out why no flags are set, or maybe switch to IOCP
+            Ok(true)
         } else if r == SOCKET_ERROR {
             Err(crate::DNSServiceError::ServiceError(r))
         } else {
-            println!("Nothing ready");
+            trace!("Nothing ready");
             Ok(false)
         }
     }
@@ -56,9 +57,8 @@ mod os {
                 std::ptr::null_mut(),
                 &mut timeout,
             );
-            return Ok(libc::FD_ISSET(fd, &mut read_set));
+            Ok(libc::FD_ISSET(fd, &mut read_set))
         }
-        // Ok(false)
     }
 }
 
