@@ -15,6 +15,7 @@ mod txt;
 // pub mod txt;
 
 pub use crate::os::{RegisteredDnsService, RegistrationError};
+use std::collections::HashMap;
 pub use txt::TxtRecord;
 
 /// DNS-SD Service for registration use
@@ -30,7 +31,7 @@ pub struct DNSService {
     /// Port service is listening on
     pub port: u16,
     /// TXT record for service if any
-    pub txt: Option<TxtRecord>,
+    pub txt: Option<HashMap<String, String>>,
 }
 impl DNSService {
     /// Registers service, advertising it on the network

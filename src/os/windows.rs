@@ -1,5 +1,5 @@
 use crate::ffi::windows as ffi;
-use crate::ffi::windows::{DWORD, PDNS_SERVICE_INSTANCE, PVOID};
+use crate::ffi::windows::{DWORD, LPWSTR, PDNS_SERVICE_INSTANCE, PVOID};
 use crate::DNSService;
 use std::convert::TryFrom;
 use std::ffi::OsString;
@@ -12,6 +12,8 @@ use std::time::Duration;
 use thiserror::Error;
 use winapi::shared::winerror::DNS_REQUEST_PENDING;
 use winapi::um::winbase::GetComputerNameW;
+
+const CALLBACK_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Errors during DNS-SD registration
 #[derive(Debug, Error)]
@@ -27,9 +29,17 @@ pub enum RegistrationError {
 /// Registration result type
 pub type Result<T, E = RegistrationError> = std::result::Result<T, E>;
 
+struct KeyValues {
+    keys: Vec<Vec<u16>>,
+    values: Vec<Vec<u16>>,
+    keys_ptr: Vec<*mut u16>,
+    values_ptr: Vec<*mut u16>,
+}
+
 trait DNSServiceExt {
     fn host_name(&self) -> String;
     fn service_name(&self) -> String;
+    fn txt_key_values(&self) -> Option<KeyValues>;
 }
 
 impl DNSServiceExt for DNSService {
@@ -49,6 +59,23 @@ impl DNSServiceExt for DNSService {
             .or(computer_name())
             .unwrap_or_else(|| String::from("Unknown"));
         format!("{}.{}.local", name, self.regtype)
+    }
+    fn txt_key_values(&self) -> Option<KeyValues> {
+        let len = self.txt.as_ref()?.len();
+        let mut keys = Vec::with_capacity(len);
+        let mut values = Vec::with_capacity(len);
+        for (key, value) in self.txt.as_ref()?.iter() {
+            keys.push(to_utf16(key));
+            values.push(to_utf16(value));
+        }
+        let keys_ptr = keys.iter_mut().map(|mut k| k.as_mut_ptr()).collect();
+        let values_ptr = values.iter_mut().map(|mut v| v.as_mut_ptr()).collect();
+        Some(KeyValues {
+            keys,
+            values,
+            keys_ptr,
+            values_ptr,
+        })
     }
 }
 
@@ -81,7 +108,7 @@ unsafe extern "C" fn register_callback(
     if !context.is_null() {
         let tx_ptr: *mut SyncSender<DWORD> = context as _;
         let tx = &*tx_ptr;
-        println!("Register complete: {}", status);
+        trace!("Register complete: {} return code", status);
         tx.send(status).unwrap();
     }
     ffi::DnsServiceFreeInstance(instance);
@@ -91,6 +118,8 @@ pub struct RegisteredDnsService {
     registered: bool,
     name: String,
     host: String,
+    txt_keys: Option<Box<Vec<u16>>>,
+    txt_values: Option<Box<Vec<u16>>>,
     request: ffi::_DNS_SERVICE_REGISTER_REQUEST,
     service: *mut ffi::_DNS_SERVICE_INSTANCE,
 }
@@ -111,7 +140,7 @@ impl RegisteredDnsService {
             warn!("Service already registered");
             return Ok(());
         }
-        info!(
+        trace!(
             "Registering:  name: {} host: {} port: {}",
             self.name,
             self.host,
@@ -128,17 +157,20 @@ impl RegisteredDnsService {
             return Err(IoError::from_raw_os_error(result as _).into());
         }
 
-        match rx.recv_timeout(Duration::from_secs(10)) {
+        match rx.recv_timeout(CALLBACK_TIMEOUT) {
             Ok(0) => {
+                // DNS_RCODE_NOERROR, from: https://docs.microsoft.com/en-us/windows/win32/dns/dns-constants#dns-response-codes
                 self.free_context();
                 self.registered = true;
                 Ok(())
             }
             Ok(e) => {
+                error!("Registration callback returned error: {}", e);
                 self.free_context();
                 Err(RegistrationError::DnsStatusError(e))
             }
             Err(_e) => {
+                error!("Timed out waiting for registration callback");
                 self.free_context();
                 Err(
                     IoError::new(ErrorKind::TimedOut, "Timed out waiting for async callback")
@@ -156,6 +188,17 @@ impl TryFrom<DNSService> for RegisteredDnsService {
             let original_host = service.host_name();
             let mut name = to_utf16(&original_name);
             let mut host = to_utf16(&original_host);
+
+            let mut kv_store = service.txt_key_values();
+            let (property_count, keys_ptr, values_ptr) = match kv_store.as_mut() {
+                Some(mut kv) => (
+                    kv.keys.len(),
+                    kv.keys_ptr.as_mut_ptr(),
+                    kv.values_ptr.as_mut_ptr(),
+                ),
+                None => (0, null_mut() as _, null_mut() as _),
+            };
+
             let service = ffi::DnsServiceConstructInstance(
                 name.as_mut_ptr(),
                 host.as_mut_ptr(),
@@ -164,9 +207,9 @@ impl TryFrom<DNSService> for RegisteredDnsService {
                 service.port,
                 0,
                 0,
-                0,
-                null_mut(),
-                null_mut(),
+                property_count as _,
+                keys_ptr as _,
+                values_ptr as _,
             );
             let request = ffi::_DNS_SERVICE_REGISTER_REQUEST {
                 Version: ffi::DNS_QUERY_REQUEST_VERSION1,
@@ -181,6 +224,8 @@ impl TryFrom<DNSService> for RegisteredDnsService {
                 name: original_name,
                 host: original_host,
                 registered: false,
+                txt_keys: None,
+                txt_values: None,
                 request,
                 service,
             })
