@@ -1,6 +1,6 @@
 //! Module containing code related to browsing/searching for services
 
-use crate::ffi;
+use crate::ffi::apple as ffi;
 use crate::DNSServiceError;
 // use std::collections::HashMap;
 use crate::Result;

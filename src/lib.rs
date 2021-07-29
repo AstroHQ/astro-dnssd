@@ -4,12 +4,40 @@
 
 use thiserror::Error;
 
-pub mod browser;
+// pub mod browser;
 mod ffi;
 #[cfg(feature = "non-blocking")]
 mod non_blocking;
-pub mod register;
-pub mod txt;
+mod os;
+mod txt;
+
+// pub mod register;
+// pub mod txt;
+
+pub use crate::os::{RegisteredDnsService, RegistrationError};
+pub use txt::TxtRecord;
+
+/// DNS-SD Service for registration use
+pub struct DNSService {
+    /// Type of service, like ._http._tcp.
+    pub regtype: String,
+    /// Name to advertise, sometimes name of device
+    pub name: Option<String>,
+    /// Domain, usually .local by default
+    pub domain: Option<String>,
+    /// Optional host, uses machine's default hostname by default
+    pub host: Option<String>,
+    /// Port service is listening on
+    pub port: u16,
+    /// TXT record for service if any
+    pub txt: Option<TxtRecord>,
+}
+impl DNSService {
+    /// Registers service, advertising it on the network
+    pub fn register(self) -> Result<RegisteredDnsService> {
+        os::register_service(self)
+    }
+}
 
 #[macro_use]
 extern crate log;
@@ -29,4 +57,4 @@ pub enum DNSServiceError {
 }
 
 /// Result type for dns-sd fallible returns
-pub type Result<T, E = DNSServiceError> = std::result::Result<T, E>;
+pub type Result<T, E = RegistrationError> = std::result::Result<T, E>;

@@ -29,3 +29,4 @@ env_logger = "0.7"
 [features]
 default = ["non-blocking"]
 non-blocking = ["winapi", "libc"]
+win-bonjour = []

@@ -21,7 +21,7 @@ fn find_avahi_compat_dns_sd() {
 }
 
 fn dns_sd_lib_path() -> Option<PathBuf> {
-    if cfg_family_is("windows") {
+    if cfg!(feature = "win-bonjour") && cfg_family_is("windows") {
         let platform = match cfg_arch().as_str() {
             "x86_64" => "x64",
             "x86" => "Win32",
@@ -40,7 +40,7 @@ fn find_windows_dns_sd() {
     if let Some(path) = dns_sd_lib_path() {
         println!("cargo:rustc-link-search=native={}", path.display())
     }
-    if cfg_family_is("windows") {
+    if cfg!(feature = "win-bonjour") && cfg_family_is("windows") {
         println!("cargo:rustc-link-lib=dnssd");
     }
 }

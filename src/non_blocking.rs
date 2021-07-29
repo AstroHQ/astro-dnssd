@@ -3,9 +3,10 @@ use std::time::Duration;
 #[cfg(target_os = "windows")]
 mod os {
     use super::*;
+    use crate::DNSServiceError;
     use winapi::um::winsock2::{WSAPoll, POLLIN, SOCKET, SOCKET_ERROR, WSAPOLLFD};
 
-    pub fn socket_is_ready(socket: SOCKET, timeout: Duration) -> Result<bool> {
+    pub fn socket_is_ready(socket: SOCKET, timeout: Duration) -> Result<bool, DNSServiceError> {
         let info = WSAPOLLFD {
             fd: socket,
             events: POLLIN,
