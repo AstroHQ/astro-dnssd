@@ -1,6 +1,6 @@
 use crate::ffi::windows as ffi;
 use crate::ffi::windows::{DWORD, PDNS_SERVICE_INSTANCE, PVOID};
-use crate::DNSService;
+use crate::DNSServiceBuilder;
 use std::convert::TryFrom;
 use std::ffi::OsString;
 use std::fmt;
@@ -42,7 +42,7 @@ trait DNSServiceExt {
     fn txt_key_values(&self) -> Option<KeyValues>;
 }
 
-impl DNSServiceExt for DNSService {
+impl DNSServiceExt for DNSServiceBuilder {
     fn host_name(&self) -> String {
         let host = self
             .host
@@ -178,9 +178,9 @@ impl RegisteredDnsService {
         }
     }
 }
-impl TryFrom<DNSService> for RegisteredDnsService {
+impl TryFrom<DNSServiceBuilder> for RegisteredDnsService {
     type Error = std::io::Error;
-    fn try_from(service: DNSService) -> Result<Self, Self::Error> {
+    fn try_from(service: DNSServiceBuilder) -> Result<Self, Self::Error> {
         unsafe {
             let original_name = service.service_name();
             let original_host = service.host_name();
@@ -209,7 +209,11 @@ impl TryFrom<DNSService> for RegisteredDnsService {
                 keys_ptr as _,
                 values_ptr as _,
             );
-
+            if service.is_null() {
+                let error = IoError::last_os_error();
+                error!("Failed to create service: {:?}", error);
+                return Err(error);
+            }
             let request = ffi::_DNS_SERVICE_REGISTER_REQUEST {
                 Version: ffi::DNS_QUERY_REQUEST_VERSION1,
                 InterfaceIndex: 0, // 0 says all interfaces
@@ -248,8 +252,8 @@ impl Drop for RegisteredDnsService {
     }
 }
 
-pub fn register_service(service: DNSService) -> Result<RegisteredDnsService> {
-    let mut service = RegisteredDnsService::try_from(service).unwrap();
+pub fn register_service(service: DNSServiceBuilder) -> Result<RegisteredDnsService> {
+    let mut service = RegisteredDnsService::try_from(service)?;
     service.register()?;
     Ok(service)
 }
