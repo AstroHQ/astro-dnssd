@@ -1,6 +1,6 @@
 //! Registration of dns-sd services
 
-use crate::ffi::{
+use crate::ffi::apple::{
     kDNSServiceErr_NoError, DNSServiceErrorType, DNSServiceFlags, DNSServiceProcessResult,
     DNSServiceRef, DNSServiceRefDeallocate, DNSServiceRefSockFD, DNSServiceRegister,
     DNSServiceUpdateRecord,
