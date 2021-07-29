@@ -1,5 +1,5 @@
 use crate::ffi::windows as ffi;
-use crate::ffi::windows::{DWORD, LPWSTR, PDNS_SERVICE_INSTANCE, PVOID};
+use crate::ffi::windows::{DWORD, PDNS_SERVICE_INSTANCE, PVOID};
 use crate::DNSService;
 use std::convert::TryFrom;
 use std::ffi::OsString;
@@ -31,7 +31,7 @@ pub type Result<T, E = RegistrationError> = std::result::Result<T, E>;
 
 struct KeyValues {
     keys: Vec<Vec<u16>>,
-    values: Vec<Vec<u16>>,
+    _values: Vec<Vec<u16>>,
     keys_ptr: Vec<*mut u16>,
     values_ptr: Vec<*mut u16>,
 }
@@ -68,11 +68,11 @@ impl DNSServiceExt for DNSService {
             keys.push(to_utf16(key));
             values.push(to_utf16(value));
         }
-        let keys_ptr = keys.iter_mut().map(|mut k| k.as_mut_ptr()).collect();
-        let values_ptr = values.iter_mut().map(|mut v| v.as_mut_ptr()).collect();
+        let keys_ptr = keys.iter_mut().map(|k| k.as_mut_ptr()).collect();
+        let values_ptr = values.iter_mut().map(|v| v.as_mut_ptr()).collect();
         Some(KeyValues {
             keys,
-            values,
+            _values: values,
             keys_ptr,
             values_ptr,
         })
@@ -118,8 +118,6 @@ pub struct RegisteredDnsService {
     registered: bool,
     name: String,
     host: String,
-    txt_keys: Option<Box<Vec<u16>>>,
-    txt_values: Option<Box<Vec<u16>>>,
     request: ffi::_DNS_SERVICE_REGISTER_REQUEST,
     service: *mut ffi::_DNS_SERVICE_INSTANCE,
 }
@@ -191,14 +189,14 @@ impl TryFrom<DNSService> for RegisteredDnsService {
 
             let mut kv_store = service.txt_key_values();
             let (property_count, keys_ptr, values_ptr) = match kv_store.as_mut() {
-                Some(mut kv) => (
+                Some(kv) => (
                     kv.keys.len(),
                     kv.keys_ptr.as_mut_ptr(),
                     kv.values_ptr.as_mut_ptr(),
                 ),
                 None => (0, null_mut() as _, null_mut() as _),
             };
-
+            // behavior suggests this copies it's arguments, so we can use pointers to rust stack here
             let service = ffi::DnsServiceConstructInstance(
                 name.as_mut_ptr(),
                 host.as_mut_ptr(),
@@ -211,6 +209,7 @@ impl TryFrom<DNSService> for RegisteredDnsService {
                 keys_ptr as _,
                 values_ptr as _,
             );
+
             let request = ffi::_DNS_SERVICE_REGISTER_REQUEST {
                 Version: ffi::DNS_QUERY_REQUEST_VERSION1,
                 InterfaceIndex: 0, // 0 says all interfaces
@@ -224,8 +223,6 @@ impl TryFrom<DNSService> for RegisteredDnsService {
                 name: original_name,
                 host: original_host,
                 registered: false,
-                txt_keys: None,
-                txt_values: None,
                 request,
                 service,
             })
