@@ -13,29 +13,7 @@ mod register;
 // pub mod txt;
 
 pub use crate::os::{RegisteredDnsService, RegistrationError};
-use std::collections::HashMap;
-
-/// DNS-SD Service for registration use
-pub struct DNSService {
-    /// Type of service, like ._http._tcp.
-    pub regtype: String,
-    /// Name to advertise, sometimes name of device
-    pub name: Option<String>,
-    /// Domain, usually .local by default
-    pub domain: Option<String>,
-    /// Optional host, uses machine's default hostname by default
-    pub host: Option<String>,
-    /// Port service is listening on
-    pub port: u16,
-    /// TXT record for service if any
-    pub txt: Option<HashMap<String, String>>,
-}
-impl DNSService {
-    /// Registers service, advertising it on the network
-    pub fn register(self) -> Result<RegisteredDnsService> {
-        os::register_service(self)
-    }
-}
+pub use crate::register::DNSServiceBuilder;
 
 #[macro_use]
 extern crate log;

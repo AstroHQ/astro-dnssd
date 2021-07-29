@@ -1,25 +1,20 @@
 // use astro_dnssd::register::DNSServiceBuilder;
-use astro_dnssd::DNSService;
+use astro_dnssd::DNSServiceBuilder;
 use env_logger::Env;
-use std::collections::HashMap;
 use std::thread::sleep;
 use std::time::Duration;
 
 fn main() {
     env_logger::from_env(Env::default().default_filter_or("trace")).init();
     println!("Registering service...");
-    let mut txt: HashMap<String, String> = HashMap::new();
-    let _ = txt.insert("status".into(), "open".into());
-    let service = DNSService {
-        regtype: "_http._tcp".to_string(),
-        name: None,
-        domain: None,
-        host: None,
-        port: 8080,
-        txt: Some(txt),
-    };
+    // let mut txt: HashMap<String, String> = HashMap::new();
+    // let _ = txt.insert("status".into(), "open".into());
+    let service = DNSServiceBuilder::new("_http._tcp", 8080)
+        .with_key_value("status".into(), "open".into())
+        .register();
+
     {
-        match service.register() {
+        match service {
             Ok(service) => {
                 sleep(Duration::from_secs(20));
                 println!("Dropping... {:?}", service);
