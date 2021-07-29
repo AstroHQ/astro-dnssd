@@ -9,8 +9,7 @@ mod ffi;
 #[cfg(feature = "non-blocking")]
 mod non_blocking;
 mod os;
-
-// pub mod register;
+mod register;
 // pub mod txt;
 
 pub use crate::os::{RegisteredDnsService, RegistrationError};
