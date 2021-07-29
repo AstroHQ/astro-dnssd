@@ -9,14 +9,12 @@ mod ffi;
 #[cfg(feature = "non-blocking")]
 mod non_blocking;
 mod os;
-mod txt;
 
 // pub mod register;
 // pub mod txt;
 
 pub use crate::os::{RegisteredDnsService, RegistrationError};
 use std::collections::HashMap;
-pub use txt::TxtRecord;
 
 /// DNS-SD Service for registration use
 pub struct DNSService {

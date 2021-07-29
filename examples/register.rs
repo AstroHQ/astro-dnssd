@@ -1,5 +1,5 @@
 // use astro_dnssd::register::DNSServiceBuilder;
-use astro_dnssd::{DNSService, TxtRecord};
+use astro_dnssd::DNSService;
 use env_logger::Env;
 use std::collections::HashMap;
 use std::thread::sleep;
