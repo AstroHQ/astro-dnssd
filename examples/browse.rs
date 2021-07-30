@@ -1,12 +1,22 @@
-// use astro_dnssd::browser::*;
 use env_logger::Env;
 use log::{error, info};
-use std::net::ToSocketAddrs;
+// use std::net::ToSocketAddrs;
+use astro_dnssd::ServiceBrowserBuilder;
+use std::time::Duration;
 
 fn main() {
-    // env_logger::from_env(Env::default().default_filter_or("trace")).init();
-    // info!("Starting browser...");
-    // let mut browser = ServiceBrowserBuilder::new("_http._tcp").build();
+    env_logger::from_env(Env::default().default_filter_or("trace")).init();
+    info!("Starting browser...");
+    let mut browser = ServiceBrowserBuilder::new("_http._tcp").browse();
+    match browser {
+        Ok(browser) => {
+            info!("Browser started!");
+            std::thread::sleep(Duration::from_secs(10));
+        }
+        Err(e) => {
+            error!("Error starting browser: {:?}", e);
+        }
+    }
     // let _result = browser.start(|result| match result {
     //     Ok(mut service) => {
     //         let event = match service.event_type {

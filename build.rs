@@ -42,6 +42,8 @@ fn find_windows_dns_sd() {
     }
     if cfg!(feature = "win-bonjour") && cfg_family_is("windows") {
         println!("cargo:rustc-link-lib=dnssd");
+    } else if cfg_family_is("windows") {
+        println!("cargo:rustc-link-lib=dnsapi");
     }
 }
 

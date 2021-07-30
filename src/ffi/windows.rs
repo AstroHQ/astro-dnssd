@@ -2,20 +2,173 @@
 
 #![allow(non_camel_case_types, non_snake_case, dead_code)]
 
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct __BindgenBitfieldUnit<Storage, Align> {
+    storage: Storage,
+    align: [Align; 0],
+}
+impl<Storage, Align> __BindgenBitfieldUnit<Storage, Align> {
+    #[inline]
+    pub const fn new(storage: Storage) -> Self {
+        Self { storage, align: [] }
+    }
+}
+impl<Storage, Align> __BindgenBitfieldUnit<Storage, Align>
+where
+    Storage: AsRef<[u8]> + AsMut<[u8]>,
+{
+    #[inline]
+    pub fn get_bit(&self, index: usize) -> bool {
+        debug_assert!(index / 8 < self.storage.as_ref().len());
+        let byte_index = index / 8;
+        let byte = self.storage.as_ref()[byte_index];
+        let bit_index = if cfg!(target_endian = "big") {
+            7 - (index % 8)
+        } else {
+            index % 8
+        };
+        let mask = 1 << bit_index;
+        byte & mask == mask
+    }
+    #[inline]
+    pub fn set_bit(&mut self, index: usize, val: bool) {
+        debug_assert!(index / 8 < self.storage.as_ref().len());
+        let byte_index = index / 8;
+        let byte = &mut self.storage.as_mut()[byte_index];
+        let bit_index = if cfg!(target_endian = "big") {
+            7 - (index % 8)
+        } else {
+            index % 8
+        };
+        let mask = 1 << bit_index;
+        if val {
+            *byte |= mask;
+        } else {
+            *byte &= !mask;
+        }
+    }
+    #[inline]
+    pub fn get(&self, bit_offset: usize, bit_width: u8) -> u64 {
+        debug_assert!(bit_width <= 64);
+        debug_assert!(bit_offset / 8 < self.storage.as_ref().len());
+        debug_assert!((bit_offset + (bit_width as usize)) / 8 <= self.storage.as_ref().len());
+        let mut val = 0;
+        for i in 0..(bit_width as usize) {
+            if self.get_bit(i + bit_offset) {
+                let index = if cfg!(target_endian = "big") {
+                    bit_width as usize - 1 - i
+                } else {
+                    i
+                };
+                val |= 1 << index;
+            }
+        }
+        val
+    }
+    #[inline]
+    pub fn set(&mut self, bit_offset: usize, bit_width: u8, val: u64) {
+        debug_assert!(bit_width <= 64);
+        debug_assert!(bit_offset / 8 < self.storage.as_ref().len());
+        debug_assert!((bit_offset + (bit_width as usize)) / 8 <= self.storage.as_ref().len());
+        for i in 0..(bit_width as usize) {
+            let mask = 1 << i;
+            let val_bit_is_set = val & mask == mask;
+            let index = if cfg!(target_endian = "big") {
+                bit_width as usize - 1 - i
+            } else {
+                i
+            };
+            self.set_bit(index + bit_offset, val_bit_is_set);
+        }
+    }
+}
+pub const DNS_TYPE_ZERO: u32 = 0;
+pub const DNS_TYPE_A: u32 = 1;
+pub const DNS_TYPE_NS: u32 = 2;
+pub const DNS_TYPE_MD: u32 = 3;
+pub const DNS_TYPE_MF: u32 = 4;
+pub const DNS_TYPE_CNAME: u32 = 5;
+pub const DNS_TYPE_SOA: u32 = 6;
+pub const DNS_TYPE_MB: u32 = 7;
+pub const DNS_TYPE_MG: u32 = 8;
+pub const DNS_TYPE_MR: u32 = 9;
+pub const DNS_TYPE_NULL: u32 = 10;
+pub const DNS_TYPE_WKS: u32 = 11;
+pub const DNS_TYPE_PTR: u32 = 12;
+pub const DNS_TYPE_HINFO: u32 = 13;
+pub const DNS_TYPE_MINFO: u32 = 14;
+pub const DNS_TYPE_MX: u32 = 15;
+pub const DNS_TYPE_TEXT: u32 = 16;
+pub const DNS_TYPE_RP: u32 = 17;
+pub const DNS_TYPE_AFSDB: u32 = 18;
+pub const DNS_TYPE_X25: u32 = 19;
+pub const DNS_TYPE_ISDN: u32 = 20;
+pub const DNS_TYPE_RT: u32 = 21;
+pub const DNS_TYPE_NSAP: u32 = 22;
+pub const DNS_TYPE_NSAPPTR: u32 = 23;
+pub const DNS_TYPE_SIG: u32 = 24;
+pub const DNS_TYPE_KEY: u32 = 25;
+pub const DNS_TYPE_PX: u32 = 26;
+pub const DNS_TYPE_GPOS: u32 = 27;
+pub const DNS_TYPE_AAAA: u32 = 28;
+pub const DNS_TYPE_LOC: u32 = 29;
+pub const DNS_TYPE_NXT: u32 = 30;
+pub const DNS_TYPE_EID: u32 = 31;
+pub const DNS_TYPE_NIMLOC: u32 = 32;
+pub const DNS_TYPE_SRV: u32 = 33;
+pub const DNS_TYPE_ATMA: u32 = 34;
+pub const DNS_TYPE_NAPTR: u32 = 35;
+pub const DNS_TYPE_KX: u32 = 36;
+pub const DNS_TYPE_CERT: u32 = 37;
+pub const DNS_TYPE_A6: u32 = 38;
+pub const DNS_TYPE_DNAME: u32 = 39;
+pub const DNS_TYPE_SINK: u32 = 40;
+pub const DNS_TYPE_OPT: u32 = 41;
+pub const DNS_TYPE_DS: u32 = 43;
+pub const DNS_TYPE_RRSIG: u32 = 46;
+pub const DNS_TYPE_NSEC: u32 = 47;
+pub const DNS_TYPE_DNSKEY: u32 = 48;
+pub const DNS_TYPE_DHCID: u32 = 49;
+pub const DNS_TYPE_NSEC3: u32 = 50;
+pub const DNS_TYPE_NSEC3PARAM: u32 = 51;
+pub const DNS_TYPE_TLSA: u32 = 52;
+pub const DNS_TYPE_UINFO: u32 = 100;
+pub const DNS_TYPE_UID: u32 = 101;
+pub const DNS_TYPE_GID: u32 = 102;
+pub const DNS_TYPE_UNSPEC: u32 = 103;
+pub const DNS_TYPE_ADDRS: u32 = 248;
+pub const DNS_TYPE_TKEY: u32 = 249;
+pub const DNS_TYPE_TSIG: u32 = 250;
+pub const DNS_TYPE_IXFR: u32 = 251;
+pub const DNS_TYPE_AXFR: u32 = 252;
+pub const DNS_TYPE_MAILB: u32 = 253;
+pub const DNS_TYPE_MAILA: u32 = 254;
+pub const DNS_TYPE_ALL: u32 = 255;
+pub const DNS_TYPE_ANY: u32 = 255;
+pub const DNS_TYPE_WINS: u32 = 65281;
+pub const DNS_TYPE_WINSR: u32 = 65282;
+pub const DNS_TYPE_NBSTAT: u32 = 65282;
 pub const DNS_QUERY_REQUEST_VERSION1: u32 = 1;
 pub type wchar_t = ::std::os::raw::c_ushort;
 pub type ULONG = ::std::os::raw::c_ulong;
+pub type UCHAR = ::std::os::raw::c_uchar;
 pub type DWORD = ::std::os::raw::c_ulong;
 pub type BOOL = ::std::os::raw::c_int;
 pub type BYTE = ::std::os::raw::c_uchar;
 pub type WORD = ::std::os::raw::c_ushort;
+pub type PBYTE = *mut BYTE;
+pub type ULONG64 = ::std::os::raw::c_ulonglong;
 pub type PVOID = *mut ::std::os::raw::c_void;
+pub type LONG = ::std::os::raw::c_long;
 pub type WCHAR = wchar_t;
 pub type LPWSTR = *mut WCHAR;
 pub type PWSTR = *mut WCHAR;
 pub type PCWSTR = *const WCHAR;
 pub type HANDLE = *mut ::std::os::raw::c_void;
+pub type LONGLONG = ::std::os::raw::c_longlong;
 pub type QWORD = ::std::os::raw::c_ulonglong;
+pub type DNS_STATUS = LONG;
 pub type IP4_ADDRESS = DWORD;
 pub type PIP4_ADDRESS = *mut DWORD;
 #[repr(C)]
@@ -81,6 +234,3136 @@ fn bindgen_test_layout_IP6_ADDRESS() {
     );
 }
 pub type PIP6_ADDRESS = *mut IP6_ADDRESS;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct DNS_A_DATA {
+    pub IpAddress: IP4_ADDRESS,
+}
+#[test]
+fn bindgen_test_layout_DNS_A_DATA() {
+    assert_eq!(
+        ::std::mem::size_of::<DNS_A_DATA>(),
+        4usize,
+        concat!("Size of: ", stringify!(DNS_A_DATA))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<DNS_A_DATA>(),
+        4usize,
+        concat!("Alignment of ", stringify!(DNS_A_DATA))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_A_DATA>())).IpAddress as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_A_DATA),
+            "::",
+            stringify!(IpAddress)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct DNS_PTR_DATAW {
+    pub pNameHost: PWSTR,
+}
+#[test]
+fn bindgen_test_layout_DNS_PTR_DATAW() {
+    assert_eq!(
+        ::std::mem::size_of::<DNS_PTR_DATAW>(),
+        8usize,
+        concat!("Size of: ", stringify!(DNS_PTR_DATAW))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<DNS_PTR_DATAW>(),
+        8usize,
+        concat!("Alignment of ", stringify!(DNS_PTR_DATAW))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_PTR_DATAW>())).pNameHost as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_PTR_DATAW),
+            "::",
+            stringify!(pNameHost)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct DNS_SOA_DATAW {
+    pub pNamePrimaryServer: PWSTR,
+    pub pNameAdministrator: PWSTR,
+    pub dwSerialNo: DWORD,
+    pub dwRefresh: DWORD,
+    pub dwRetry: DWORD,
+    pub dwExpire: DWORD,
+    pub dwDefaultTtl: DWORD,
+}
+#[test]
+fn bindgen_test_layout_DNS_SOA_DATAW() {
+    assert_eq!(
+        ::std::mem::size_of::<DNS_SOA_DATAW>(),
+        40usize,
+        concat!("Size of: ", stringify!(DNS_SOA_DATAW))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<DNS_SOA_DATAW>(),
+        8usize,
+        concat!("Alignment of ", stringify!(DNS_SOA_DATAW))
+    );
+    assert_eq!(
+        unsafe {
+            &(*(::std::ptr::null::<DNS_SOA_DATAW>())).pNamePrimaryServer as *const _ as usize
+        },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_SOA_DATAW),
+            "::",
+            stringify!(pNamePrimaryServer)
+        )
+    );
+    assert_eq!(
+        unsafe {
+            &(*(::std::ptr::null::<DNS_SOA_DATAW>())).pNameAdministrator as *const _ as usize
+        },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_SOA_DATAW),
+            "::",
+            stringify!(pNameAdministrator)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_SOA_DATAW>())).dwSerialNo as *const _ as usize },
+        16usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_SOA_DATAW),
+            "::",
+            stringify!(dwSerialNo)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_SOA_DATAW>())).dwRefresh as *const _ as usize },
+        20usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_SOA_DATAW),
+            "::",
+            stringify!(dwRefresh)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_SOA_DATAW>())).dwRetry as *const _ as usize },
+        24usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_SOA_DATAW),
+            "::",
+            stringify!(dwRetry)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_SOA_DATAW>())).dwExpire as *const _ as usize },
+        28usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_SOA_DATAW),
+            "::",
+            stringify!(dwExpire)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_SOA_DATAW>())).dwDefaultTtl as *const _ as usize },
+        32usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_SOA_DATAW),
+            "::",
+            stringify!(dwDefaultTtl)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct DNS_MINFO_DATAW {
+    pub pNameMailbox: PWSTR,
+    pub pNameErrorsMailbox: PWSTR,
+}
+#[test]
+fn bindgen_test_layout_DNS_MINFO_DATAW() {
+    assert_eq!(
+        ::std::mem::size_of::<DNS_MINFO_DATAW>(),
+        16usize,
+        concat!("Size of: ", stringify!(DNS_MINFO_DATAW))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<DNS_MINFO_DATAW>(),
+        8usize,
+        concat!("Alignment of ", stringify!(DNS_MINFO_DATAW))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_MINFO_DATAW>())).pNameMailbox as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_MINFO_DATAW),
+            "::",
+            stringify!(pNameMailbox)
+        )
+    );
+    assert_eq!(
+        unsafe {
+            &(*(::std::ptr::null::<DNS_MINFO_DATAW>())).pNameErrorsMailbox as *const _ as usize
+        },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_MINFO_DATAW),
+            "::",
+            stringify!(pNameErrorsMailbox)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct DNS_MX_DATAW {
+    pub pNameExchange: PWSTR,
+    pub wPreference: WORD,
+    pub Pad: WORD,
+}
+#[test]
+fn bindgen_test_layout_DNS_MX_DATAW() {
+    assert_eq!(
+        ::std::mem::size_of::<DNS_MX_DATAW>(),
+        16usize,
+        concat!("Size of: ", stringify!(DNS_MX_DATAW))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<DNS_MX_DATAW>(),
+        8usize,
+        concat!("Alignment of ", stringify!(DNS_MX_DATAW))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_MX_DATAW>())).pNameExchange as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_MX_DATAW),
+            "::",
+            stringify!(pNameExchange)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_MX_DATAW>())).wPreference as *const _ as usize },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_MX_DATAW),
+            "::",
+            stringify!(wPreference)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_MX_DATAW>())).Pad as *const _ as usize },
+        10usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_MX_DATAW),
+            "::",
+            stringify!(Pad)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct DNS_TXT_DATAW {
+    pub dwStringCount: DWORD,
+    pub pStringArray: [PWSTR; 1usize],
+}
+#[test]
+fn bindgen_test_layout_DNS_TXT_DATAW() {
+    assert_eq!(
+        ::std::mem::size_of::<DNS_TXT_DATAW>(),
+        16usize,
+        concat!("Size of: ", stringify!(DNS_TXT_DATAW))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<DNS_TXT_DATAW>(),
+        8usize,
+        concat!("Alignment of ", stringify!(DNS_TXT_DATAW))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_TXT_DATAW>())).dwStringCount as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_TXT_DATAW),
+            "::",
+            stringify!(dwStringCount)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_TXT_DATAW>())).pStringArray as *const _ as usize },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_TXT_DATAW),
+            "::",
+            stringify!(pStringArray)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct DNS_NULL_DATA {
+    pub dwByteCount: DWORD,
+    pub Data: [BYTE; 1usize],
+}
+#[test]
+fn bindgen_test_layout_DNS_NULL_DATA() {
+    assert_eq!(
+        ::std::mem::size_of::<DNS_NULL_DATA>(),
+        8usize,
+        concat!("Size of: ", stringify!(DNS_NULL_DATA))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<DNS_NULL_DATA>(),
+        4usize,
+        concat!("Alignment of ", stringify!(DNS_NULL_DATA))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_NULL_DATA>())).dwByteCount as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_NULL_DATA),
+            "::",
+            stringify!(dwByteCount)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_NULL_DATA>())).Data as *const _ as usize },
+        4usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_NULL_DATA),
+            "::",
+            stringify!(Data)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct DNS_WKS_DATA {
+    pub IpAddress: IP4_ADDRESS,
+    pub chProtocol: UCHAR,
+    pub BitMask: [BYTE; 1usize],
+}
+#[test]
+fn bindgen_test_layout_DNS_WKS_DATA() {
+    assert_eq!(
+        ::std::mem::size_of::<DNS_WKS_DATA>(),
+        8usize,
+        concat!("Size of: ", stringify!(DNS_WKS_DATA))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<DNS_WKS_DATA>(),
+        4usize,
+        concat!("Alignment of ", stringify!(DNS_WKS_DATA))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_WKS_DATA>())).IpAddress as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_WKS_DATA),
+            "::",
+            stringify!(IpAddress)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_WKS_DATA>())).chProtocol as *const _ as usize },
+        4usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_WKS_DATA),
+            "::",
+            stringify!(chProtocol)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_WKS_DATA>())).BitMask as *const _ as usize },
+        5usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_WKS_DATA),
+            "::",
+            stringify!(BitMask)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct DNS_AAAA_DATA {
+    pub Ip6Address: IP6_ADDRESS,
+}
+#[test]
+fn bindgen_test_layout_DNS_AAAA_DATA() {
+    assert_eq!(
+        ::std::mem::size_of::<DNS_AAAA_DATA>(),
+        16usize,
+        concat!("Size of: ", stringify!(DNS_AAAA_DATA))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<DNS_AAAA_DATA>(),
+        8usize,
+        concat!("Alignment of ", stringify!(DNS_AAAA_DATA))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_AAAA_DATA>())).Ip6Address as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_AAAA_DATA),
+            "::",
+            stringify!(Ip6Address)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct DNS_SIG_DATAW {
+    pub wTypeCovered: WORD,
+    pub chAlgorithm: BYTE,
+    pub chLabelCount: BYTE,
+    pub dwOriginalTtl: DWORD,
+    pub dwExpiration: DWORD,
+    pub dwTimeSigned: DWORD,
+    pub wKeyTag: WORD,
+    pub wSignatureLength: WORD,
+    pub pNameSigner: PWSTR,
+    pub Signature: [BYTE; 1usize],
+}
+#[test]
+fn bindgen_test_layout_DNS_SIG_DATAW() {
+    assert_eq!(
+        ::std::mem::size_of::<DNS_SIG_DATAW>(),
+        40usize,
+        concat!("Size of: ", stringify!(DNS_SIG_DATAW))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<DNS_SIG_DATAW>(),
+        8usize,
+        concat!("Alignment of ", stringify!(DNS_SIG_DATAW))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_SIG_DATAW>())).wTypeCovered as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_SIG_DATAW),
+            "::",
+            stringify!(wTypeCovered)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_SIG_DATAW>())).chAlgorithm as *const _ as usize },
+        2usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_SIG_DATAW),
+            "::",
+            stringify!(chAlgorithm)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_SIG_DATAW>())).chLabelCount as *const _ as usize },
+        3usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_SIG_DATAW),
+            "::",
+            stringify!(chLabelCount)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_SIG_DATAW>())).dwOriginalTtl as *const _ as usize },
+        4usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_SIG_DATAW),
+            "::",
+            stringify!(dwOriginalTtl)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_SIG_DATAW>())).dwExpiration as *const _ as usize },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_SIG_DATAW),
+            "::",
+            stringify!(dwExpiration)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_SIG_DATAW>())).dwTimeSigned as *const _ as usize },
+        12usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_SIG_DATAW),
+            "::",
+            stringify!(dwTimeSigned)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_SIG_DATAW>())).wKeyTag as *const _ as usize },
+        16usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_SIG_DATAW),
+            "::",
+            stringify!(wKeyTag)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_SIG_DATAW>())).wSignatureLength as *const _ as usize },
+        18usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_SIG_DATAW),
+            "::",
+            stringify!(wSignatureLength)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_SIG_DATAW>())).pNameSigner as *const _ as usize },
+        24usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_SIG_DATAW),
+            "::",
+            stringify!(pNameSigner)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_SIG_DATAW>())).Signature as *const _ as usize },
+        32usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_SIG_DATAW),
+            "::",
+            stringify!(Signature)
+        )
+    );
+}
+pub type DNS_RRSIG_DATAW = DNS_SIG_DATAW;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct DNS_KEY_DATA {
+    pub wFlags: WORD,
+    pub chProtocol: BYTE,
+    pub chAlgorithm: BYTE,
+    pub wKeyLength: WORD,
+    pub wPad: WORD,
+    pub Key: [BYTE; 1usize],
+}
+#[test]
+fn bindgen_test_layout_DNS_KEY_DATA() {
+    assert_eq!(
+        ::std::mem::size_of::<DNS_KEY_DATA>(),
+        10usize,
+        concat!("Size of: ", stringify!(DNS_KEY_DATA))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<DNS_KEY_DATA>(),
+        2usize,
+        concat!("Alignment of ", stringify!(DNS_KEY_DATA))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_KEY_DATA>())).wFlags as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_KEY_DATA),
+            "::",
+            stringify!(wFlags)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_KEY_DATA>())).chProtocol as *const _ as usize },
+        2usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_KEY_DATA),
+            "::",
+            stringify!(chProtocol)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_KEY_DATA>())).chAlgorithm as *const _ as usize },
+        3usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_KEY_DATA),
+            "::",
+            stringify!(chAlgorithm)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_KEY_DATA>())).wKeyLength as *const _ as usize },
+        4usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_KEY_DATA),
+            "::",
+            stringify!(wKeyLength)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_KEY_DATA>())).wPad as *const _ as usize },
+        6usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_KEY_DATA),
+            "::",
+            stringify!(wPad)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_KEY_DATA>())).Key as *const _ as usize },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_KEY_DATA),
+            "::",
+            stringify!(Key)
+        )
+    );
+}
+pub type DNS_DNSKEY_DATA = DNS_KEY_DATA;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct DNS_DHCID_DATA {
+    pub dwByteCount: DWORD,
+    pub DHCID: [BYTE; 1usize],
+}
+#[test]
+fn bindgen_test_layout_DNS_DHCID_DATA() {
+    assert_eq!(
+        ::std::mem::size_of::<DNS_DHCID_DATA>(),
+        8usize,
+        concat!("Size of: ", stringify!(DNS_DHCID_DATA))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<DNS_DHCID_DATA>(),
+        4usize,
+        concat!("Alignment of ", stringify!(DNS_DHCID_DATA))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_DHCID_DATA>())).dwByteCount as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_DHCID_DATA),
+            "::",
+            stringify!(dwByteCount)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_DHCID_DATA>())).DHCID as *const _ as usize },
+        4usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_DHCID_DATA),
+            "::",
+            stringify!(DHCID)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct DNS_NSEC_DATAW {
+    pub pNextDomainName: PWSTR,
+    pub wTypeBitMapsLength: WORD,
+    pub wPad: WORD,
+    pub TypeBitMaps: [BYTE; 1usize],
+}
+#[test]
+fn bindgen_test_layout_DNS_NSEC_DATAW() {
+    assert_eq!(
+        ::std::mem::size_of::<DNS_NSEC_DATAW>(),
+        16usize,
+        concat!("Size of: ", stringify!(DNS_NSEC_DATAW))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<DNS_NSEC_DATAW>(),
+        8usize,
+        concat!("Alignment of ", stringify!(DNS_NSEC_DATAW))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_NSEC_DATAW>())).pNextDomainName as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_NSEC_DATAW),
+            "::",
+            stringify!(pNextDomainName)
+        )
+    );
+    assert_eq!(
+        unsafe {
+            &(*(::std::ptr::null::<DNS_NSEC_DATAW>())).wTypeBitMapsLength as *const _ as usize
+        },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_NSEC_DATAW),
+            "::",
+            stringify!(wTypeBitMapsLength)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_NSEC_DATAW>())).wPad as *const _ as usize },
+        10usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_NSEC_DATAW),
+            "::",
+            stringify!(wPad)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_NSEC_DATAW>())).TypeBitMaps as *const _ as usize },
+        12usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_NSEC_DATAW),
+            "::",
+            stringify!(TypeBitMaps)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct DNS_NSEC3_DATA {
+    pub chAlgorithm: BYTE,
+    pub bFlags: BYTE,
+    pub wIterations: WORD,
+    pub bSaltLength: BYTE,
+    pub bHashLength: BYTE,
+    pub wTypeBitMapsLength: WORD,
+    pub chData: [BYTE; 1usize],
+}
+#[test]
+fn bindgen_test_layout_DNS_NSEC3_DATA() {
+    assert_eq!(
+        ::std::mem::size_of::<DNS_NSEC3_DATA>(),
+        10usize,
+        concat!("Size of: ", stringify!(DNS_NSEC3_DATA))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<DNS_NSEC3_DATA>(),
+        2usize,
+        concat!("Alignment of ", stringify!(DNS_NSEC3_DATA))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_NSEC3_DATA>())).chAlgorithm as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_NSEC3_DATA),
+            "::",
+            stringify!(chAlgorithm)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_NSEC3_DATA>())).bFlags as *const _ as usize },
+        1usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_NSEC3_DATA),
+            "::",
+            stringify!(bFlags)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_NSEC3_DATA>())).wIterations as *const _ as usize },
+        2usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_NSEC3_DATA),
+            "::",
+            stringify!(wIterations)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_NSEC3_DATA>())).bSaltLength as *const _ as usize },
+        4usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_NSEC3_DATA),
+            "::",
+            stringify!(bSaltLength)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_NSEC3_DATA>())).bHashLength as *const _ as usize },
+        5usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_NSEC3_DATA),
+            "::",
+            stringify!(bHashLength)
+        )
+    );
+    assert_eq!(
+        unsafe {
+            &(*(::std::ptr::null::<DNS_NSEC3_DATA>())).wTypeBitMapsLength as *const _ as usize
+        },
+        6usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_NSEC3_DATA),
+            "::",
+            stringify!(wTypeBitMapsLength)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_NSEC3_DATA>())).chData as *const _ as usize },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_NSEC3_DATA),
+            "::",
+            stringify!(chData)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct DNS_NSEC3PARAM_DATA {
+    pub chAlgorithm: BYTE,
+    pub bFlags: BYTE,
+    pub wIterations: WORD,
+    pub bSaltLength: BYTE,
+    pub bPad: [BYTE; 3usize],
+    pub pbSalt: [BYTE; 1usize],
+}
+#[test]
+fn bindgen_test_layout_DNS_NSEC3PARAM_DATA() {
+    assert_eq!(
+        ::std::mem::size_of::<DNS_NSEC3PARAM_DATA>(),
+        10usize,
+        concat!("Size of: ", stringify!(DNS_NSEC3PARAM_DATA))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<DNS_NSEC3PARAM_DATA>(),
+        2usize,
+        concat!("Alignment of ", stringify!(DNS_NSEC3PARAM_DATA))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_NSEC3PARAM_DATA>())).chAlgorithm as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_NSEC3PARAM_DATA),
+            "::",
+            stringify!(chAlgorithm)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_NSEC3PARAM_DATA>())).bFlags as *const _ as usize },
+        1usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_NSEC3PARAM_DATA),
+            "::",
+            stringify!(bFlags)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_NSEC3PARAM_DATA>())).wIterations as *const _ as usize },
+        2usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_NSEC3PARAM_DATA),
+            "::",
+            stringify!(wIterations)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_NSEC3PARAM_DATA>())).bSaltLength as *const _ as usize },
+        4usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_NSEC3PARAM_DATA),
+            "::",
+            stringify!(bSaltLength)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_NSEC3PARAM_DATA>())).bPad as *const _ as usize },
+        5usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_NSEC3PARAM_DATA),
+            "::",
+            stringify!(bPad)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_NSEC3PARAM_DATA>())).pbSalt as *const _ as usize },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_NSEC3PARAM_DATA),
+            "::",
+            stringify!(pbSalt)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct DNS_TLSA_DATA {
+    pub bCertUsage: BYTE,
+    pub bSelector: BYTE,
+    pub bMatchingType: BYTE,
+    pub bCertificateAssociationDataLength: WORD,
+    pub bPad: [BYTE; 3usize],
+    pub bCertificateAssociationData: [BYTE; 1usize],
+}
+#[test]
+fn bindgen_test_layout_DNS_TLSA_DATA() {
+    assert_eq!(
+        ::std::mem::size_of::<DNS_TLSA_DATA>(),
+        10usize,
+        concat!("Size of: ", stringify!(DNS_TLSA_DATA))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<DNS_TLSA_DATA>(),
+        2usize,
+        concat!("Alignment of ", stringify!(DNS_TLSA_DATA))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_TLSA_DATA>())).bCertUsage as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_TLSA_DATA),
+            "::",
+            stringify!(bCertUsage)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_TLSA_DATA>())).bSelector as *const _ as usize },
+        1usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_TLSA_DATA),
+            "::",
+            stringify!(bSelector)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_TLSA_DATA>())).bMatchingType as *const _ as usize },
+        2usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_TLSA_DATA),
+            "::",
+            stringify!(bMatchingType)
+        )
+    );
+    assert_eq!(
+        unsafe {
+            &(*(::std::ptr::null::<DNS_TLSA_DATA>())).bCertificateAssociationDataLength as *const _
+                as usize
+        },
+        4usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_TLSA_DATA),
+            "::",
+            stringify!(bCertificateAssociationDataLength)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_TLSA_DATA>())).bPad as *const _ as usize },
+        6usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_TLSA_DATA),
+            "::",
+            stringify!(bPad)
+        )
+    );
+    assert_eq!(
+        unsafe {
+            &(*(::std::ptr::null::<DNS_TLSA_DATA>())).bCertificateAssociationData as *const _
+                as usize
+        },
+        9usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_TLSA_DATA),
+            "::",
+            stringify!(bCertificateAssociationData)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct DNS_DS_DATA {
+    pub wKeyTag: WORD,
+    pub chAlgorithm: BYTE,
+    pub chDigestType: BYTE,
+    pub wDigestLength: WORD,
+    pub wPad: WORD,
+    pub Digest: [BYTE; 1usize],
+}
+#[test]
+fn bindgen_test_layout_DNS_DS_DATA() {
+    assert_eq!(
+        ::std::mem::size_of::<DNS_DS_DATA>(),
+        10usize,
+        concat!("Size of: ", stringify!(DNS_DS_DATA))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<DNS_DS_DATA>(),
+        2usize,
+        concat!("Alignment of ", stringify!(DNS_DS_DATA))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_DS_DATA>())).wKeyTag as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_DS_DATA),
+            "::",
+            stringify!(wKeyTag)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_DS_DATA>())).chAlgorithm as *const _ as usize },
+        2usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_DS_DATA),
+            "::",
+            stringify!(chAlgorithm)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_DS_DATA>())).chDigestType as *const _ as usize },
+        3usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_DS_DATA),
+            "::",
+            stringify!(chDigestType)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_DS_DATA>())).wDigestLength as *const _ as usize },
+        4usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_DS_DATA),
+            "::",
+            stringify!(wDigestLength)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_DS_DATA>())).wPad as *const _ as usize },
+        6usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_DS_DATA),
+            "::",
+            stringify!(wPad)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_DS_DATA>())).Digest as *const _ as usize },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_DS_DATA),
+            "::",
+            stringify!(Digest)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct DNS_OPT_DATA {
+    pub wDataLength: WORD,
+    pub wPad: WORD,
+    pub Data: [BYTE; 1usize],
+}
+#[test]
+fn bindgen_test_layout_DNS_OPT_DATA() {
+    assert_eq!(
+        ::std::mem::size_of::<DNS_OPT_DATA>(),
+        6usize,
+        concat!("Size of: ", stringify!(DNS_OPT_DATA))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<DNS_OPT_DATA>(),
+        2usize,
+        concat!("Alignment of ", stringify!(DNS_OPT_DATA))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_OPT_DATA>())).wDataLength as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_OPT_DATA),
+            "::",
+            stringify!(wDataLength)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_OPT_DATA>())).wPad as *const _ as usize },
+        2usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_OPT_DATA),
+            "::",
+            stringify!(wPad)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_OPT_DATA>())).Data as *const _ as usize },
+        4usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_OPT_DATA),
+            "::",
+            stringify!(Data)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct DNS_NXT_DATAW {
+    pub pNameNext: PWSTR,
+    pub wNumTypes: WORD,
+    pub wTypes: [WORD; 1usize],
+}
+#[test]
+fn bindgen_test_layout_DNS_NXT_DATAW() {
+    assert_eq!(
+        ::std::mem::size_of::<DNS_NXT_DATAW>(),
+        16usize,
+        concat!("Size of: ", stringify!(DNS_NXT_DATAW))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<DNS_NXT_DATAW>(),
+        8usize,
+        concat!("Alignment of ", stringify!(DNS_NXT_DATAW))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_NXT_DATAW>())).pNameNext as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_NXT_DATAW),
+            "::",
+            stringify!(pNameNext)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_NXT_DATAW>())).wNumTypes as *const _ as usize },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_NXT_DATAW),
+            "::",
+            stringify!(wNumTypes)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_NXT_DATAW>())).wTypes as *const _ as usize },
+        10usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_NXT_DATAW),
+            "::",
+            stringify!(wTypes)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct DNS_SRV_DATAW {
+    pub pNameTarget: PWSTR,
+    pub wPriority: WORD,
+    pub wWeight: WORD,
+    pub wPort: WORD,
+    pub Pad: WORD,
+}
+#[test]
+fn bindgen_test_layout_DNS_SRV_DATAW() {
+    assert_eq!(
+        ::std::mem::size_of::<DNS_SRV_DATAW>(),
+        16usize,
+        concat!("Size of: ", stringify!(DNS_SRV_DATAW))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<DNS_SRV_DATAW>(),
+        8usize,
+        concat!("Alignment of ", stringify!(DNS_SRV_DATAW))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_SRV_DATAW>())).pNameTarget as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_SRV_DATAW),
+            "::",
+            stringify!(pNameTarget)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_SRV_DATAW>())).wPriority as *const _ as usize },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_SRV_DATAW),
+            "::",
+            stringify!(wPriority)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_SRV_DATAW>())).wWeight as *const _ as usize },
+        10usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_SRV_DATAW),
+            "::",
+            stringify!(wWeight)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_SRV_DATAW>())).wPort as *const _ as usize },
+        12usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_SRV_DATAW),
+            "::",
+            stringify!(wPort)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_SRV_DATAW>())).Pad as *const _ as usize },
+        14usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_SRV_DATAW),
+            "::",
+            stringify!(Pad)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct DNS_NAPTR_DATAW {
+    pub wOrder: WORD,
+    pub wPreference: WORD,
+    pub pFlags: PWSTR,
+    pub pService: PWSTR,
+    pub pRegularExpression: PWSTR,
+    pub pReplacement: PWSTR,
+}
+#[test]
+fn bindgen_test_layout_DNS_NAPTR_DATAW() {
+    assert_eq!(
+        ::std::mem::size_of::<DNS_NAPTR_DATAW>(),
+        40usize,
+        concat!("Size of: ", stringify!(DNS_NAPTR_DATAW))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<DNS_NAPTR_DATAW>(),
+        8usize,
+        concat!("Alignment of ", stringify!(DNS_NAPTR_DATAW))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_NAPTR_DATAW>())).wOrder as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_NAPTR_DATAW),
+            "::",
+            stringify!(wOrder)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_NAPTR_DATAW>())).wPreference as *const _ as usize },
+        2usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_NAPTR_DATAW),
+            "::",
+            stringify!(wPreference)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_NAPTR_DATAW>())).pFlags as *const _ as usize },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_NAPTR_DATAW),
+            "::",
+            stringify!(pFlags)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_NAPTR_DATAW>())).pService as *const _ as usize },
+        16usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_NAPTR_DATAW),
+            "::",
+            stringify!(pService)
+        )
+    );
+    assert_eq!(
+        unsafe {
+            &(*(::std::ptr::null::<DNS_NAPTR_DATAW>())).pRegularExpression as *const _ as usize
+        },
+        24usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_NAPTR_DATAW),
+            "::",
+            stringify!(pRegularExpression)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_NAPTR_DATAW>())).pReplacement as *const _ as usize },
+        32usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_NAPTR_DATAW),
+            "::",
+            stringify!(pReplacement)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct DNS_ATMA_DATA {
+    pub AddressType: BYTE,
+    pub Address: [BYTE; 20usize],
+}
+#[test]
+fn bindgen_test_layout_DNS_ATMA_DATA() {
+    assert_eq!(
+        ::std::mem::size_of::<DNS_ATMA_DATA>(),
+        21usize,
+        concat!("Size of: ", stringify!(DNS_ATMA_DATA))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<DNS_ATMA_DATA>(),
+        1usize,
+        concat!("Alignment of ", stringify!(DNS_ATMA_DATA))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_ATMA_DATA>())).AddressType as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_ATMA_DATA),
+            "::",
+            stringify!(AddressType)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_ATMA_DATA>())).Address as *const _ as usize },
+        1usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_ATMA_DATA),
+            "::",
+            stringify!(Address)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct DNS_TKEY_DATAW {
+    pub pNameAlgorithm: PWSTR,
+    pub pAlgorithmPacket: PBYTE,
+    pub pKey: PBYTE,
+    pub pOtherData: PBYTE,
+    pub dwCreateTime: DWORD,
+    pub dwExpireTime: DWORD,
+    pub wMode: WORD,
+    pub wError: WORD,
+    pub wKeyLength: WORD,
+    pub wOtherLength: WORD,
+    pub cAlgNameLength: UCHAR,
+    pub bPacketPointers: BOOL,
+}
+#[test]
+fn bindgen_test_layout_DNS_TKEY_DATAW() {
+    assert_eq!(
+        ::std::mem::size_of::<DNS_TKEY_DATAW>(),
+        56usize,
+        concat!("Size of: ", stringify!(DNS_TKEY_DATAW))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<DNS_TKEY_DATAW>(),
+        8usize,
+        concat!("Alignment of ", stringify!(DNS_TKEY_DATAW))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_TKEY_DATAW>())).pNameAlgorithm as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_TKEY_DATAW),
+            "::",
+            stringify!(pNameAlgorithm)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_TKEY_DATAW>())).pAlgorithmPacket as *const _ as usize },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_TKEY_DATAW),
+            "::",
+            stringify!(pAlgorithmPacket)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_TKEY_DATAW>())).pKey as *const _ as usize },
+        16usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_TKEY_DATAW),
+            "::",
+            stringify!(pKey)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_TKEY_DATAW>())).pOtherData as *const _ as usize },
+        24usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_TKEY_DATAW),
+            "::",
+            stringify!(pOtherData)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_TKEY_DATAW>())).dwCreateTime as *const _ as usize },
+        32usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_TKEY_DATAW),
+            "::",
+            stringify!(dwCreateTime)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_TKEY_DATAW>())).dwExpireTime as *const _ as usize },
+        36usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_TKEY_DATAW),
+            "::",
+            stringify!(dwExpireTime)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_TKEY_DATAW>())).wMode as *const _ as usize },
+        40usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_TKEY_DATAW),
+            "::",
+            stringify!(wMode)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_TKEY_DATAW>())).wError as *const _ as usize },
+        42usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_TKEY_DATAW),
+            "::",
+            stringify!(wError)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_TKEY_DATAW>())).wKeyLength as *const _ as usize },
+        44usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_TKEY_DATAW),
+            "::",
+            stringify!(wKeyLength)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_TKEY_DATAW>())).wOtherLength as *const _ as usize },
+        46usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_TKEY_DATAW),
+            "::",
+            stringify!(wOtherLength)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_TKEY_DATAW>())).cAlgNameLength as *const _ as usize },
+        48usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_TKEY_DATAW),
+            "::",
+            stringify!(cAlgNameLength)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_TKEY_DATAW>())).bPacketPointers as *const _ as usize },
+        52usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_TKEY_DATAW),
+            "::",
+            stringify!(bPacketPointers)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct DNS_TSIG_DATAW {
+    pub pNameAlgorithm: PWSTR,
+    pub pAlgorithmPacket: PBYTE,
+    pub pSignature: PBYTE,
+    pub pOtherData: PBYTE,
+    pub i64CreateTime: LONGLONG,
+    pub wFudgeTime: WORD,
+    pub wOriginalXid: WORD,
+    pub wError: WORD,
+    pub wSigLength: WORD,
+    pub wOtherLength: WORD,
+    pub cAlgNameLength: UCHAR,
+    pub bPacketPointers: BOOL,
+}
+#[test]
+fn bindgen_test_layout_DNS_TSIG_DATAW() {
+    assert_eq!(
+        ::std::mem::size_of::<DNS_TSIG_DATAW>(),
+        56usize,
+        concat!("Size of: ", stringify!(DNS_TSIG_DATAW))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<DNS_TSIG_DATAW>(),
+        8usize,
+        concat!("Alignment of ", stringify!(DNS_TSIG_DATAW))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_TSIG_DATAW>())).pNameAlgorithm as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_TSIG_DATAW),
+            "::",
+            stringify!(pNameAlgorithm)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_TSIG_DATAW>())).pAlgorithmPacket as *const _ as usize },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_TSIG_DATAW),
+            "::",
+            stringify!(pAlgorithmPacket)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_TSIG_DATAW>())).pSignature as *const _ as usize },
+        16usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_TSIG_DATAW),
+            "::",
+            stringify!(pSignature)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_TSIG_DATAW>())).pOtherData as *const _ as usize },
+        24usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_TSIG_DATAW),
+            "::",
+            stringify!(pOtherData)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_TSIG_DATAW>())).i64CreateTime as *const _ as usize },
+        32usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_TSIG_DATAW),
+            "::",
+            stringify!(i64CreateTime)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_TSIG_DATAW>())).wFudgeTime as *const _ as usize },
+        40usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_TSIG_DATAW),
+            "::",
+            stringify!(wFudgeTime)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_TSIG_DATAW>())).wOriginalXid as *const _ as usize },
+        42usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_TSIG_DATAW),
+            "::",
+            stringify!(wOriginalXid)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_TSIG_DATAW>())).wError as *const _ as usize },
+        44usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_TSIG_DATAW),
+            "::",
+            stringify!(wError)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_TSIG_DATAW>())).wSigLength as *const _ as usize },
+        46usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_TSIG_DATAW),
+            "::",
+            stringify!(wSigLength)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_TSIG_DATAW>())).wOtherLength as *const _ as usize },
+        48usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_TSIG_DATAW),
+            "::",
+            stringify!(wOtherLength)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_TSIG_DATAW>())).cAlgNameLength as *const _ as usize },
+        50usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_TSIG_DATAW),
+            "::",
+            stringify!(cAlgNameLength)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_TSIG_DATAW>())).bPacketPointers as *const _ as usize },
+        52usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_TSIG_DATAW),
+            "::",
+            stringify!(bPacketPointers)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct DNS_UNKNOWN_DATA {
+    pub dwByteCount: DWORD,
+    pub bData: [BYTE; 1usize],
+}
+#[test]
+fn bindgen_test_layout_DNS_UNKNOWN_DATA() {
+    assert_eq!(
+        ::std::mem::size_of::<DNS_UNKNOWN_DATA>(),
+        8usize,
+        concat!("Size of: ", stringify!(DNS_UNKNOWN_DATA))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<DNS_UNKNOWN_DATA>(),
+        4usize,
+        concat!("Alignment of ", stringify!(DNS_UNKNOWN_DATA))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_UNKNOWN_DATA>())).dwByteCount as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_UNKNOWN_DATA),
+            "::",
+            stringify!(dwByteCount)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_UNKNOWN_DATA>())).bData as *const _ as usize },
+        4usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_UNKNOWN_DATA),
+            "::",
+            stringify!(bData)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct DNS_WINS_DATA {
+    pub dwMappingFlag: DWORD,
+    pub dwLookupTimeout: DWORD,
+    pub dwCacheTimeout: DWORD,
+    pub cWinsServerCount: DWORD,
+    pub WinsServers: [IP4_ADDRESS; 1usize],
+}
+#[test]
+fn bindgen_test_layout_DNS_WINS_DATA() {
+    assert_eq!(
+        ::std::mem::size_of::<DNS_WINS_DATA>(),
+        20usize,
+        concat!("Size of: ", stringify!(DNS_WINS_DATA))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<DNS_WINS_DATA>(),
+        4usize,
+        concat!("Alignment of ", stringify!(DNS_WINS_DATA))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_WINS_DATA>())).dwMappingFlag as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_WINS_DATA),
+            "::",
+            stringify!(dwMappingFlag)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_WINS_DATA>())).dwLookupTimeout as *const _ as usize },
+        4usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_WINS_DATA),
+            "::",
+            stringify!(dwLookupTimeout)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_WINS_DATA>())).dwCacheTimeout as *const _ as usize },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_WINS_DATA),
+            "::",
+            stringify!(dwCacheTimeout)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_WINS_DATA>())).cWinsServerCount as *const _ as usize },
+        12usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_WINS_DATA),
+            "::",
+            stringify!(cWinsServerCount)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_WINS_DATA>())).WinsServers as *const _ as usize },
+        16usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_WINS_DATA),
+            "::",
+            stringify!(WinsServers)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct DNS_WINSR_DATAW {
+    pub dwMappingFlag: DWORD,
+    pub dwLookupTimeout: DWORD,
+    pub dwCacheTimeout: DWORD,
+    pub pNameResultDomain: PWSTR,
+}
+#[test]
+fn bindgen_test_layout_DNS_WINSR_DATAW() {
+    assert_eq!(
+        ::std::mem::size_of::<DNS_WINSR_DATAW>(),
+        24usize,
+        concat!("Size of: ", stringify!(DNS_WINSR_DATAW))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<DNS_WINSR_DATAW>(),
+        8usize,
+        concat!("Alignment of ", stringify!(DNS_WINSR_DATAW))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_WINSR_DATAW>())).dwMappingFlag as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_WINSR_DATAW),
+            "::",
+            stringify!(dwMappingFlag)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_WINSR_DATAW>())).dwLookupTimeout as *const _ as usize },
+        4usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_WINSR_DATAW),
+            "::",
+            stringify!(dwLookupTimeout)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<DNS_WINSR_DATAW>())).dwCacheTimeout as *const _ as usize },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_WINSR_DATAW),
+            "::",
+            stringify!(dwCacheTimeout)
+        )
+    );
+    assert_eq!(
+        unsafe {
+            &(*(::std::ptr::null::<DNS_WINSR_DATAW>())).pNameResultDomain as *const _ as usize
+        },
+        16usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(DNS_WINSR_DATAW),
+            "::",
+            stringify!(pNameResultDomain)
+        )
+    );
+}
+#[repr(C)]
+#[repr(align(4))]
+#[derive(Debug, Copy, Clone)]
+pub struct _DnsRecordFlags {
+    pub _bitfield_1: __BindgenBitfieldUnit<[u8; 4usize], u32>,
+}
+#[test]
+fn bindgen_test_layout__DnsRecordFlags() {
+    assert_eq!(
+        ::std::mem::size_of::<_DnsRecordFlags>(),
+        4usize,
+        concat!("Size of: ", stringify!(_DnsRecordFlags))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<_DnsRecordFlags>(),
+        4usize,
+        concat!("Alignment of ", stringify!(_DnsRecordFlags))
+    );
+}
+impl _DnsRecordFlags {
+    #[inline]
+    pub fn Section(&self) -> DWORD {
+        unsafe { ::std::mem::transmute(self._bitfield_1.get(0usize, 2u8) as u32) }
+    }
+    #[inline]
+    pub fn set_Section(&mut self, val: DWORD) {
+        unsafe {
+            let val: u32 = ::std::mem::transmute(val);
+            self._bitfield_1.set(0usize, 2u8, val as u64)
+        }
+    }
+    #[inline]
+    pub fn Delete(&self) -> DWORD {
+        unsafe { ::std::mem::transmute(self._bitfield_1.get(2usize, 1u8) as u32) }
+    }
+    #[inline]
+    pub fn set_Delete(&mut self, val: DWORD) {
+        unsafe {
+            let val: u32 = ::std::mem::transmute(val);
+            self._bitfield_1.set(2usize, 1u8, val as u64)
+        }
+    }
+    #[inline]
+    pub fn CharSet(&self) -> DWORD {
+        unsafe { ::std::mem::transmute(self._bitfield_1.get(3usize, 2u8) as u32) }
+    }
+    #[inline]
+    pub fn set_CharSet(&mut self, val: DWORD) {
+        unsafe {
+            let val: u32 = ::std::mem::transmute(val);
+            self._bitfield_1.set(3usize, 2u8, val as u64)
+        }
+    }
+    #[inline]
+    pub fn Unused(&self) -> DWORD {
+        unsafe { ::std::mem::transmute(self._bitfield_1.get(5usize, 3u8) as u32) }
+    }
+    #[inline]
+    pub fn set_Unused(&mut self, val: DWORD) {
+        unsafe {
+            let val: u32 = ::std::mem::transmute(val);
+            self._bitfield_1.set(5usize, 3u8, val as u64)
+        }
+    }
+    #[inline]
+    pub fn Reserved(&self) -> DWORD {
+        unsafe { ::std::mem::transmute(self._bitfield_1.get(8usize, 24u8) as u32) }
+    }
+    #[inline]
+    pub fn set_Reserved(&mut self, val: DWORD) {
+        unsafe {
+            let val: u32 = ::std::mem::transmute(val);
+            self._bitfield_1.set(8usize, 24u8, val as u64)
+        }
+    }
+    #[inline]
+    pub fn new_bitfield_1(
+        Section: DWORD,
+        Delete: DWORD,
+        CharSet: DWORD,
+        Unused: DWORD,
+        Reserved: DWORD,
+    ) -> __BindgenBitfieldUnit<[u8; 4usize], u32> {
+        let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 4usize], u32> =
+            Default::default();
+        __bindgen_bitfield_unit.set(0usize, 2u8, {
+            let Section: u32 = unsafe { ::std::mem::transmute(Section) };
+            Section as u64
+        });
+        __bindgen_bitfield_unit.set(2usize, 1u8, {
+            let Delete: u32 = unsafe { ::std::mem::transmute(Delete) };
+            Delete as u64
+        });
+        __bindgen_bitfield_unit.set(3usize, 2u8, {
+            let CharSet: u32 = unsafe { ::std::mem::transmute(CharSet) };
+            CharSet as u64
+        });
+        __bindgen_bitfield_unit.set(5usize, 3u8, {
+            let Unused: u32 = unsafe { ::std::mem::transmute(Unused) };
+            Unused as u64
+        });
+        __bindgen_bitfield_unit.set(8usize, 24u8, {
+            let Reserved: u32 = unsafe { ::std::mem::transmute(Reserved) };
+            Reserved as u64
+        });
+        __bindgen_bitfield_unit
+    }
+}
+pub type DNS_RECORD_FLAGS = _DnsRecordFlags;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _DnsRecordW {
+    pub pNext: *mut _DnsRecordW,
+    pub pName: PWSTR,
+    pub wType: WORD,
+    pub wDataLength: WORD,
+    pub Flags: _DnsRecordW__bindgen_ty_1,
+    pub dwTtl: DWORD,
+    pub dwReserved: DWORD,
+    pub Data: _DnsRecordW__bindgen_ty_2,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union _DnsRecordW__bindgen_ty_1 {
+    pub DW: DWORD,
+    pub S: DNS_RECORD_FLAGS,
+    _bindgen_union_align: u32,
+}
+#[test]
+fn bindgen_test_layout__DnsRecordW__bindgen_ty_1() {
+    assert_eq!(
+        ::std::mem::size_of::<_DnsRecordW__bindgen_ty_1>(),
+        4usize,
+        concat!("Size of: ", stringify!(_DnsRecordW__bindgen_ty_1))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<_DnsRecordW__bindgen_ty_1>(),
+        4usize,
+        concat!("Alignment of ", stringify!(_DnsRecordW__bindgen_ty_1))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_1>())).DW as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_1),
+            "::",
+            stringify!(DW)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_1>())).S as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_1),
+            "::",
+            stringify!(S)
+        )
+    );
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union _DnsRecordW__bindgen_ty_2 {
+    pub A: DNS_A_DATA,
+    pub SOA: DNS_SOA_DATAW,
+    pub Soa: DNS_SOA_DATAW,
+    pub PTR: DNS_PTR_DATAW,
+    pub Ptr: DNS_PTR_DATAW,
+    pub NS: DNS_PTR_DATAW,
+    pub Ns: DNS_PTR_DATAW,
+    pub CNAME: DNS_PTR_DATAW,
+    pub Cname: DNS_PTR_DATAW,
+    pub DNAME: DNS_PTR_DATAW,
+    pub Dname: DNS_PTR_DATAW,
+    pub MB: DNS_PTR_DATAW,
+    pub Mb: DNS_PTR_DATAW,
+    pub MD: DNS_PTR_DATAW,
+    pub Md: DNS_PTR_DATAW,
+    pub MF: DNS_PTR_DATAW,
+    pub Mf: DNS_PTR_DATAW,
+    pub MG: DNS_PTR_DATAW,
+    pub Mg: DNS_PTR_DATAW,
+    pub MR: DNS_PTR_DATAW,
+    pub Mr: DNS_PTR_DATAW,
+    pub MINFO: DNS_MINFO_DATAW,
+    pub Minfo: DNS_MINFO_DATAW,
+    pub RP: DNS_MINFO_DATAW,
+    pub Rp: DNS_MINFO_DATAW,
+    pub MX: DNS_MX_DATAW,
+    pub Mx: DNS_MX_DATAW,
+    pub AFSDB: DNS_MX_DATAW,
+    pub Afsdb: DNS_MX_DATAW,
+    pub RT: DNS_MX_DATAW,
+    pub Rt: DNS_MX_DATAW,
+    pub HINFO: DNS_TXT_DATAW,
+    pub Hinfo: DNS_TXT_DATAW,
+    pub ISDN: DNS_TXT_DATAW,
+    pub Isdn: DNS_TXT_DATAW,
+    pub TXT: DNS_TXT_DATAW,
+    pub Txt: DNS_TXT_DATAW,
+    pub X25: DNS_TXT_DATAW,
+    pub Null: DNS_NULL_DATA,
+    pub WKS: DNS_WKS_DATA,
+    pub Wks: DNS_WKS_DATA,
+    pub AAAA: DNS_AAAA_DATA,
+    pub KEY: DNS_KEY_DATA,
+    pub Key: DNS_KEY_DATA,
+    pub SIG: DNS_SIG_DATAW,
+    pub Sig: DNS_SIG_DATAW,
+    pub ATMA: DNS_ATMA_DATA,
+    pub Atma: DNS_ATMA_DATA,
+    pub NXT: DNS_NXT_DATAW,
+    pub Nxt: DNS_NXT_DATAW,
+    pub SRV: DNS_SRV_DATAW,
+    pub Srv: DNS_SRV_DATAW,
+    pub NAPTR: DNS_NAPTR_DATAW,
+    pub Naptr: DNS_NAPTR_DATAW,
+    pub OPT: DNS_OPT_DATA,
+    pub Opt: DNS_OPT_DATA,
+    pub DS: DNS_DS_DATA,
+    pub Ds: DNS_DS_DATA,
+    pub RRSIG: DNS_RRSIG_DATAW,
+    pub Rrsig: DNS_RRSIG_DATAW,
+    pub NSEC: DNS_NSEC_DATAW,
+    pub Nsec: DNS_NSEC_DATAW,
+    pub DNSKEY: DNS_DNSKEY_DATA,
+    pub Dnskey: DNS_DNSKEY_DATA,
+    pub TKEY: DNS_TKEY_DATAW,
+    pub Tkey: DNS_TKEY_DATAW,
+    pub TSIG: DNS_TSIG_DATAW,
+    pub Tsig: DNS_TSIG_DATAW,
+    pub WINS: DNS_WINS_DATA,
+    pub Wins: DNS_WINS_DATA,
+    pub WINSR: DNS_WINSR_DATAW,
+    pub WinsR: DNS_WINSR_DATAW,
+    pub NBSTAT: DNS_WINSR_DATAW,
+    pub Nbstat: DNS_WINSR_DATAW,
+    pub DHCID: DNS_DHCID_DATA,
+    pub NSEC3: DNS_NSEC3_DATA,
+    pub Nsec3: DNS_NSEC3_DATA,
+    pub NSEC3PARAM: DNS_NSEC3PARAM_DATA,
+    pub Nsec3Param: DNS_NSEC3PARAM_DATA,
+    pub TLSA: DNS_TLSA_DATA,
+    pub Tlsa: DNS_TLSA_DATA,
+    pub UNKNOWN: DNS_UNKNOWN_DATA,
+    pub Unknown: DNS_UNKNOWN_DATA,
+    pub pDataPtr: PBYTE,
+    _bindgen_union_align: [u64; 7usize],
+}
+#[test]
+fn bindgen_test_layout__DnsRecordW__bindgen_ty_2() {
+    assert_eq!(
+        ::std::mem::size_of::<_DnsRecordW__bindgen_ty_2>(),
+        56usize,
+        concat!("Size of: ", stringify!(_DnsRecordW__bindgen_ty_2))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<_DnsRecordW__bindgen_ty_2>(),
+        8usize,
+        concat!("Alignment of ", stringify!(_DnsRecordW__bindgen_ty_2))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).A as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(A)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).SOA as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(SOA)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Soa as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Soa)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).PTR as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(PTR)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Ptr as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Ptr)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).NS as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(NS)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Ns as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Ns)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).CNAME as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(CNAME)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Cname as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Cname)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).DNAME as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(DNAME)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Dname as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Dname)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).MB as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(MB)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Mb as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Mb)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).MD as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(MD)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Md as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Md)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).MF as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(MF)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Mf as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Mf)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).MG as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(MG)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Mg as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Mg)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).MR as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(MR)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Mr as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Mr)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).MINFO as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(MINFO)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Minfo as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Minfo)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).RP as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(RP)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Rp as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Rp)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).MX as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(MX)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Mx as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Mx)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).AFSDB as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(AFSDB)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Afsdb as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Afsdb)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).RT as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(RT)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Rt as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Rt)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).HINFO as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(HINFO)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Hinfo as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Hinfo)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).ISDN as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(ISDN)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Isdn as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Isdn)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).TXT as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(TXT)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Txt as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Txt)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).X25 as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(X25)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Null as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Null)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).WKS as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(WKS)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Wks as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Wks)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).AAAA as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(AAAA)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).KEY as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(KEY)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Key as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Key)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).SIG as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(SIG)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Sig as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Sig)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).ATMA as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(ATMA)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Atma as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Atma)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).NXT as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(NXT)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Nxt as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Nxt)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).SRV as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(SRV)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Srv as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Srv)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).NAPTR as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(NAPTR)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Naptr as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Naptr)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).OPT as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(OPT)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Opt as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Opt)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).DS as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(DS)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Ds as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Ds)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).RRSIG as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(RRSIG)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Rrsig as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Rrsig)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).NSEC as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(NSEC)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Nsec as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Nsec)
+        )
+    );
+    assert_eq!(
+        unsafe {
+            &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).DNSKEY as *const _ as usize
+        },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(DNSKEY)
+        )
+    );
+    assert_eq!(
+        unsafe {
+            &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Dnskey as *const _ as usize
+        },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Dnskey)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).TKEY as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(TKEY)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Tkey as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Tkey)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).TSIG as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(TSIG)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Tsig as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Tsig)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).WINS as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(WINS)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Wins as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Wins)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).WINSR as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(WINSR)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).WinsR as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(WinsR)
+        )
+    );
+    assert_eq!(
+        unsafe {
+            &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).NBSTAT as *const _ as usize
+        },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(NBSTAT)
+        )
+    );
+    assert_eq!(
+        unsafe {
+            &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Nbstat as *const _ as usize
+        },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Nbstat)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).DHCID as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(DHCID)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).NSEC3 as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(NSEC3)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Nsec3 as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Nsec3)
+        )
+    );
+    assert_eq!(
+        unsafe {
+            &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).NSEC3PARAM as *const _ as usize
+        },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(NSEC3PARAM)
+        )
+    );
+    assert_eq!(
+        unsafe {
+            &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Nsec3Param as *const _ as usize
+        },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Nsec3Param)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).TLSA as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(TLSA)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Tlsa as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Tlsa)
+        )
+    );
+    assert_eq!(
+        unsafe {
+            &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).UNKNOWN as *const _ as usize
+        },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(UNKNOWN)
+        )
+    );
+    assert_eq!(
+        unsafe {
+            &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).Unknown as *const _ as usize
+        },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(Unknown)
+        )
+    );
+    assert_eq!(
+        unsafe {
+            &(*(::std::ptr::null::<_DnsRecordW__bindgen_ty_2>())).pDataPtr as *const _ as usize
+        },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW__bindgen_ty_2),
+            "::",
+            stringify!(pDataPtr)
+        )
+    );
+}
+#[test]
+fn bindgen_test_layout__DnsRecordW() {
+    assert_eq!(
+        ::std::mem::size_of::<_DnsRecordW>(),
+        88usize,
+        concat!("Size of: ", stringify!(_DnsRecordW))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<_DnsRecordW>(),
+        8usize,
+        concat!("Alignment of ", stringify!(_DnsRecordW))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW>())).pNext as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW),
+            "::",
+            stringify!(pNext)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW>())).pName as *const _ as usize },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW),
+            "::",
+            stringify!(pName)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW>())).wType as *const _ as usize },
+        16usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW),
+            "::",
+            stringify!(wType)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW>())).wDataLength as *const _ as usize },
+        18usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW),
+            "::",
+            stringify!(wDataLength)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW>())).Flags as *const _ as usize },
+        20usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW),
+            "::",
+            stringify!(Flags)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW>())).dwTtl as *const _ as usize },
+        24usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW),
+            "::",
+            stringify!(dwTtl)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW>())).dwReserved as *const _ as usize },
+        28usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW),
+            "::",
+            stringify!(dwReserved)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DnsRecordW>())).Data as *const _ as usize },
+        32usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DnsRecordW),
+            "::",
+            stringify!(Data)
+        )
+    );
+}
+pub type DNS_RECORDW = _DnsRecordW;
+pub type PDNS_RECORD = *mut DNS_RECORDW;
+pub const DNS_FREE_TYPE_DnsFreeFlat: DNS_FREE_TYPE = 0;
+pub const DNS_FREE_TYPE_DnsFreeRecordList: DNS_FREE_TYPE = 1;
+pub const DNS_FREE_TYPE_DnsFreeParsedMessageFields: DNS_FREE_TYPE = 2;
+pub type DNS_FREE_TYPE = i32;
+extern "C" {
+    pub fn DnsFree(pData: PVOID, FreeType: DNS_FREE_TYPE);
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _DNS_QUERY_RESULT {
+    pub Version: ULONG,
+    pub QueryStatus: DNS_STATUS,
+    pub QueryOptions: ULONG64,
+    pub pQueryRecords: PDNS_RECORD,
+    pub Reserved: PVOID,
+}
+#[test]
+fn bindgen_test_layout__DNS_QUERY_RESULT() {
+    assert_eq!(
+        ::std::mem::size_of::<_DNS_QUERY_RESULT>(),
+        32usize,
+        concat!("Size of: ", stringify!(_DNS_QUERY_RESULT))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<_DNS_QUERY_RESULT>(),
+        8usize,
+        concat!("Alignment of ", stringify!(_DNS_QUERY_RESULT))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DNS_QUERY_RESULT>())).Version as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DNS_QUERY_RESULT),
+            "::",
+            stringify!(Version)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DNS_QUERY_RESULT>())).QueryStatus as *const _ as usize },
+        4usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DNS_QUERY_RESULT),
+            "::",
+            stringify!(QueryStatus)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DNS_QUERY_RESULT>())).QueryOptions as *const _ as usize },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DNS_QUERY_RESULT),
+            "::",
+            stringify!(QueryOptions)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DNS_QUERY_RESULT>())).pQueryRecords as *const _ as usize },
+        16usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DNS_QUERY_RESULT),
+            "::",
+            stringify!(pQueryRecords)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<_DNS_QUERY_RESULT>())).Reserved as *const _ as usize },
+        24usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DNS_QUERY_RESULT),
+            "::",
+            stringify!(Reserved)
+        )
+    );
+}
+pub type PDNS_QUERY_RESULT = *mut _DNS_QUERY_RESULT;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _DNS_SERVICE_INSTANCE {
@@ -247,6 +3530,9 @@ extern "C" {
     ) -> PDNS_SERVICE_INSTANCE;
 }
 extern "C" {
+    pub fn DnsServiceCopyInstance(pOrig: PDNS_SERVICE_INSTANCE) -> PDNS_SERVICE_INSTANCE;
+}
+extern "C" {
     pub fn DnsServiceFreeInstance(pInstance: PDNS_SERVICE_INSTANCE);
 }
 #[repr(C)]
@@ -278,6 +3564,240 @@ fn bindgen_test_layout__DNS_SERVICE_CANCEL() {
     );
 }
 pub type PDNS_SERVICE_CANCEL = *mut _DNS_SERVICE_CANCEL;
+pub type PDNS_SERVICE_BROWSE_CALLBACK =
+    ::std::option::Option<unsafe extern "C" fn(DWORD, PVOID, PDNS_RECORD)>;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _DNS_SERVICE_BROWSE_REQUEST {
+    pub Version: ULONG,
+    pub InterfaceIndex: ULONG,
+    pub QueryName: PCWSTR,
+    pub __bindgen_anon_1: _DNS_SERVICE_BROWSE_REQUEST__bindgen_ty_1,
+    pub pQueryContext: PVOID,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union _DNS_SERVICE_BROWSE_REQUEST__bindgen_ty_1 {
+    pub pBrowseCallback: PDNS_SERVICE_BROWSE_CALLBACK,
+    pub pBrowseCallbackV2:
+        ::std::option::Option<unsafe extern "C" fn(DWORD, PVOID, PDNS_QUERY_RESULT)>,
+    _bindgen_union_align: u64,
+}
+#[test]
+fn bindgen_test_layout__DNS_SERVICE_BROWSE_REQUEST__bindgen_ty_1() {
+    assert_eq!(
+        ::std::mem::size_of::<_DNS_SERVICE_BROWSE_REQUEST__bindgen_ty_1>(),
+        8usize,
+        concat!(
+            "Size of: ",
+            stringify!(_DNS_SERVICE_BROWSE_REQUEST__bindgen_ty_1)
+        )
+    );
+    assert_eq!(
+        ::std::mem::align_of::<_DNS_SERVICE_BROWSE_REQUEST__bindgen_ty_1>(),
+        8usize,
+        concat!(
+            "Alignment of ",
+            stringify!(_DNS_SERVICE_BROWSE_REQUEST__bindgen_ty_1)
+        )
+    );
+    assert_eq!(
+        unsafe {
+            &(*(::std::ptr::null::<_DNS_SERVICE_BROWSE_REQUEST__bindgen_ty_1>())).pBrowseCallback
+                as *const _ as usize
+        },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DNS_SERVICE_BROWSE_REQUEST__bindgen_ty_1),
+            "::",
+            stringify!(pBrowseCallback)
+        )
+    );
+    assert_eq!(
+        unsafe {
+            &(*(::std::ptr::null::<_DNS_SERVICE_BROWSE_REQUEST__bindgen_ty_1>())).pBrowseCallbackV2
+                as *const _ as usize
+        },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DNS_SERVICE_BROWSE_REQUEST__bindgen_ty_1),
+            "::",
+            stringify!(pBrowseCallbackV2)
+        )
+    );
+}
+#[test]
+fn bindgen_test_layout__DNS_SERVICE_BROWSE_REQUEST() {
+    assert_eq!(
+        ::std::mem::size_of::<_DNS_SERVICE_BROWSE_REQUEST>(),
+        32usize,
+        concat!("Size of: ", stringify!(_DNS_SERVICE_BROWSE_REQUEST))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<_DNS_SERVICE_BROWSE_REQUEST>(),
+        8usize,
+        concat!("Alignment of ", stringify!(_DNS_SERVICE_BROWSE_REQUEST))
+    );
+    assert_eq!(
+        unsafe {
+            &(*(::std::ptr::null::<_DNS_SERVICE_BROWSE_REQUEST>())).Version as *const _ as usize
+        },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DNS_SERVICE_BROWSE_REQUEST),
+            "::",
+            stringify!(Version)
+        )
+    );
+    assert_eq!(
+        unsafe {
+            &(*(::std::ptr::null::<_DNS_SERVICE_BROWSE_REQUEST>())).InterfaceIndex as *const _
+                as usize
+        },
+        4usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DNS_SERVICE_BROWSE_REQUEST),
+            "::",
+            stringify!(InterfaceIndex)
+        )
+    );
+    assert_eq!(
+        unsafe {
+            &(*(::std::ptr::null::<_DNS_SERVICE_BROWSE_REQUEST>())).QueryName as *const _ as usize
+        },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DNS_SERVICE_BROWSE_REQUEST),
+            "::",
+            stringify!(QueryName)
+        )
+    );
+    assert_eq!(
+        unsafe {
+            &(*(::std::ptr::null::<_DNS_SERVICE_BROWSE_REQUEST>())).pQueryContext as *const _
+                as usize
+        },
+        24usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DNS_SERVICE_BROWSE_REQUEST),
+            "::",
+            stringify!(pQueryContext)
+        )
+    );
+}
+pub type PDNS_SERVICE_BROWSE_REQUEST = *mut _DNS_SERVICE_BROWSE_REQUEST;
+extern "C" {
+    pub fn DnsServiceBrowse(
+        pRequest: PDNS_SERVICE_BROWSE_REQUEST,
+        pCancel: PDNS_SERVICE_CANCEL,
+    ) -> DNS_STATUS;
+}
+extern "C" {
+    pub fn DnsServiceBrowseCancel(pCancelHandle: PDNS_SERVICE_CANCEL) -> DNS_STATUS;
+}
+pub type PDNS_SERVICE_RESOLVE_COMPLETE =
+    ::std::option::Option<unsafe extern "C" fn(DWORD, PVOID, PDNS_SERVICE_INSTANCE)>;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _DNS_SERVICE_RESOLVE_REQUEST {
+    pub Version: ULONG,
+    pub InterfaceIndex: ULONG,
+    pub QueryName: PWSTR,
+    pub pResolveCompletionCallback: PDNS_SERVICE_RESOLVE_COMPLETE,
+    pub pQueryContext: PVOID,
+}
+#[test]
+fn bindgen_test_layout__DNS_SERVICE_RESOLVE_REQUEST() {
+    assert_eq!(
+        ::std::mem::size_of::<_DNS_SERVICE_RESOLVE_REQUEST>(),
+        32usize,
+        concat!("Size of: ", stringify!(_DNS_SERVICE_RESOLVE_REQUEST))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<_DNS_SERVICE_RESOLVE_REQUEST>(),
+        8usize,
+        concat!("Alignment of ", stringify!(_DNS_SERVICE_RESOLVE_REQUEST))
+    );
+    assert_eq!(
+        unsafe {
+            &(*(::std::ptr::null::<_DNS_SERVICE_RESOLVE_REQUEST>())).Version as *const _ as usize
+        },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DNS_SERVICE_RESOLVE_REQUEST),
+            "::",
+            stringify!(Version)
+        )
+    );
+    assert_eq!(
+        unsafe {
+            &(*(::std::ptr::null::<_DNS_SERVICE_RESOLVE_REQUEST>())).InterfaceIndex as *const _
+                as usize
+        },
+        4usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DNS_SERVICE_RESOLVE_REQUEST),
+            "::",
+            stringify!(InterfaceIndex)
+        )
+    );
+    assert_eq!(
+        unsafe {
+            &(*(::std::ptr::null::<_DNS_SERVICE_RESOLVE_REQUEST>())).QueryName as *const _ as usize
+        },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DNS_SERVICE_RESOLVE_REQUEST),
+            "::",
+            stringify!(QueryName)
+        )
+    );
+    assert_eq!(
+        unsafe {
+            &(*(::std::ptr::null::<_DNS_SERVICE_RESOLVE_REQUEST>())).pResolveCompletionCallback
+                as *const _ as usize
+        },
+        16usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DNS_SERVICE_RESOLVE_REQUEST),
+            "::",
+            stringify!(pResolveCompletionCallback)
+        )
+    );
+    assert_eq!(
+        unsafe {
+            &(*(::std::ptr::null::<_DNS_SERVICE_RESOLVE_REQUEST>())).pQueryContext as *const _
+                as usize
+        },
+        24usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(_DNS_SERVICE_RESOLVE_REQUEST),
+            "::",
+            stringify!(pQueryContext)
+        )
+    );
+}
+pub type PDNS_SERVICE_RESOLVE_REQUEST = *mut _DNS_SERVICE_RESOLVE_REQUEST;
+extern "C" {
+    pub fn DnsServiceResolve(
+        pRequest: PDNS_SERVICE_RESOLVE_REQUEST,
+        pCancel: PDNS_SERVICE_CANCEL,
+    ) -> DNS_STATUS;
+}
+extern "C" {
+    pub fn DnsServiceResolveCancel(pCancelHandle: PDNS_SERVICE_CANCEL) -> DNS_STATUS;
+}
 pub type PDNS_SERVICE_REGISTER_COMPLETE =
     ::std::option::Option<unsafe extern "C" fn(DWORD, PVOID, PDNS_SERVICE_INSTANCE)>;
 #[repr(C)]
@@ -395,15 +3915,18 @@ fn bindgen_test_layout__DNS_SERVICE_REGISTER_REQUEST() {
     );
 }
 pub type PDNS_SERVICE_REGISTER_REQUEST = *mut _DNS_SERVICE_REGISTER_REQUEST;
-#[link(name = "dnsapi")]
 extern "C" {
-    pub fn DnsServiceRegisterCancel(pCancelHandle: PDNS_SERVICE_CANCEL) -> DWORD;
     pub fn DnsServiceRegister(
         pRequest: PDNS_SERVICE_REGISTER_REQUEST,
         pCancel: PDNS_SERVICE_CANCEL,
     ) -> DWORD;
+}
+extern "C" {
     pub fn DnsServiceDeRegister(
         pRequest: PDNS_SERVICE_REGISTER_REQUEST,
         pCancel: PDNS_SERVICE_CANCEL,
     ) -> DWORD;
+}
+extern "C" {
+    pub fn DnsServiceRegisterCancel(pCancelHandle: PDNS_SERVICE_CANCEL) -> DWORD;
 }
