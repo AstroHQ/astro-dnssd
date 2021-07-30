@@ -12,3 +12,7 @@ pub use windows::RegistrationError;
 mod apple;
 #[cfg(any(feature = "win-bonjour", not(target_os = "windows")))]
 pub use apple::register_service;
+#[cfg(any(feature = "win-bonjour", not(target_os = "windows")))]
+pub use apple::RegisteredDnsService;
+#[cfg(any(feature = "win-bonjour", not(target_os = "windows")))]
+pub use apple::RegistrationError;

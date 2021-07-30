@@ -1,11 +1,11 @@
 //! TXT record creation & handling
 
+use super::RegistrationError;
 use crate::ffi::apple::{
     kDNSServiceErr_NoError, TXTRecordContainsKey, TXTRecordCreate, TXTRecordDeallocate,
     TXTRecordGetBytesPtr, TXTRecordGetCount, TXTRecordGetLength, TXTRecordGetValuePtr,
     TXTRecordRef, TXTRecordRemoveValue, TXTRecordSetValue,
 };
-use crate::DNSServiceError;
 use std::ffi::{c_void, CString};
 use std::mem;
 use std::ptr;
@@ -34,12 +34,12 @@ impl TXTRecord {
     /// Sets a key/value pair
     ///
     /// **Note:** Only the first 256 bytes of the value will be used.
-    pub fn insert<V>(&mut self, key: &str, value: Option<V>) -> Result<(), DNSServiceError>
+    pub fn insert<V>(&mut self, key: &str, value: Option<V>) -> Result<(), RegistrationError>
     where
         V: AsRef<[u8]>,
     {
         let value = value.as_ref().map(|x| x.as_ref());
-        let key = CString::new(key).or(Err(DNSServiceError::InvalidString))?;
+        let key = CString::new(key).or(Err(RegistrationError::InvalidString))?;
         let value_size = value.map_or(0, |x| x.len().min(u8::max_value() as usize) as u8);
         let result = unsafe {
             TXTRecordSetValue(
@@ -52,7 +52,7 @@ impl TXTRecord {
         if result == kDNSServiceErr_NoError {
             return Ok(());
         }
-        Err(DNSServiceError::ServiceError(result))
+        Err(RegistrationError::ServiceError(result))
     }
 
     /// Removes a key/value pair

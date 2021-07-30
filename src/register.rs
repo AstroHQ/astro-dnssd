@@ -1,6 +1,6 @@
-use crate::os::{register_service, RegisteredDnsService};
-use crate::Result;
+use crate::os::{register_service, RegisteredDnsService, RegistrationError};
 use std::collections::HashMap;
+pub type Result<T, E = RegistrationError> = std::result::Result<T, E>;
 
 /// Builder for creating a new DNSService for registration purposes
 pub struct DNSServiceBuilder {
