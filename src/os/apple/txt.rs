@@ -1,11 +1,11 @@
 //! TXT record creation & handling
 
-use super::RegistrationError;
 use crate::ffi::apple::{
     kDNSServiceErr_NoError, TXTRecordContainsKey, TXTRecordCreate, TXTRecordDeallocate,
     TXTRecordGetBytesPtr, TXTRecordGetCount, TXTRecordGetLength, TXTRecordGetValuePtr,
     TXTRecordRef, TXTRecordRemoveValue, TXTRecordSetValue,
 };
+use crate::os::apple::register::RegistrationError;
 use std::ffi::{c_void, CString};
 use std::mem;
 use std::ptr;

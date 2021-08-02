@@ -5,12 +5,11 @@
 // pub mod browser;
 mod browse;
 mod ffi;
-#[cfg(feature = "non-blocking")]
 mod non_blocking;
 mod os;
 mod register;
 
-pub use crate::browse::ServiceBrowserBuilder;
+pub use crate::browse::{BrowseError, ServiceBrowser, ServiceBrowserBuilder};
 pub use crate::os::{RegisteredDnsService, RegistrationError};
 pub use crate::register::DNSServiceBuilder;
 
