@@ -10,4 +10,7 @@ pub use windows::{
 #[cfg(any(feature = "win-bonjour", not(target_os = "windows")))]
 mod apple;
 #[cfg(any(feature = "win-bonjour", not(target_os = "windows")))]
-pub use apple::{register_service, RegisteredDnsService, RegistrationError};
+pub use apple::{
+    browse::{browse, BrowseError, ServiceBrowser},
+    register::{register_service, RegisteredDnsService, RegistrationError},
+};

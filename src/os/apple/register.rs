@@ -1,7 +1,6 @@
 //! Registration of dns-sd services
 
 use super::txt::TXTRecord;
-use super::RegistrationError;
 use crate::ffi::apple::{
     kDNSServiceErr_NoError, DNSServiceErrorType, DNSServiceFlags, DNSServiceProcessResult,
     DNSServiceRef, DNSServiceRefDeallocate, DNSServiceRefSockFD, DNSServiceRegister,
@@ -15,8 +14,23 @@ use std::ptr;
 use std::ptr::null_mut;
 use std::sync::mpsc::{sync_channel, SyncSender};
 use std::time::Duration;
+use thiserror::Error;
 
 const CALLBACK_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Common error for DNS-SD service
+#[derive(Debug, Error, Copy, Clone, PartialEq, Eq)]
+pub enum RegistrationError {
+    /// Invalid input string
+    #[error("Invalid string argument, must be C string compatible")]
+    InvalidString,
+    /// Unexpected invalid strings from C API
+    #[error("DNSSD API returned invalid UTF-8 string")]
+    InternalInvalidString,
+    /// Error from DNSSD service
+    #[error("DNSSD Error: {0}")]
+    ServiceError(i32),
+}
 
 unsafe extern "C" fn register_reply(
     _sd_ref: DNSServiceRef,

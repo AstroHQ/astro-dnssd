@@ -1,4 +1,3 @@
-use crate::Result;
 use std::time::Duration;
 #[cfg(target_os = "windows")]
 mod os {
@@ -41,7 +40,7 @@ mod os {
 #[cfg(not(target_os = "windows"))]
 mod os {
     use super::*;
-    pub fn socket_is_ready(socket: i32, timeout: Duration) -> Result<bool> {
+    pub fn socket_is_ready(socket: i32, timeout: Duration) -> Result<bool, std::io::Error> {
         unsafe {
             let fd = socket;
             let mut timeout = libc::timeval {
