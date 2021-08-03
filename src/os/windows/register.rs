@@ -246,6 +246,8 @@ impl Drop for RegisteredDnsService {
         }
     }
 }
+// should be safe to send across threads, just not access across
+unsafe impl Send for RegisteredDnsService {}
 
 pub fn register_service(service: DNSServiceBuilder) -> Result<RegisteredDnsService> {
     let mut service = RegisteredDnsService::try_from(service)?;
