@@ -2,18 +2,18 @@ use crate::browse::{Result, Service, ServiceEventType};
 use crate::ffi::windows::{
     DNS_FREE_TYPE_DnsFreeRecordList, DnsFree, DnsServiceBrowse, DnsServiceBrowseCancel,
     _DNS_SERVICE_BROWSE_REQUEST__bindgen_ty_1 as BrowseCallbackUnion, DNS_QUERY_REQUEST_VERSION1,
-    DNS_STATUS, DNS_TYPE_A, DNS_TYPE_AAAA, DNS_TYPE_PTR, DNS_TYPE_SRV, DNS_TYPE_TEXT, DWORD,
-    PDNS_RECORD, PVOID, _DNS_SERVICE_BROWSE_REQUEST, _DNS_SERVICE_CANCEL,
+    DNS_TYPE_A, DNS_TYPE_AAAA, DNS_TYPE_PTR, DNS_TYPE_SRV, DNS_TYPE_TEXT, DWORD, PDNS_RECORD,
+    PVOID, _DNS_SERVICE_BROWSE_REQUEST, _DNS_SERVICE_CANCEL,
 };
 use crate::os::windows::to_utf16;
 use crate::ServiceBrowserBuilder;
 use std::convert::TryFrom;
-use std::ffi::CStr;
 use std::io::{Error as IoError, ErrorKind};
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::ptr::null_mut;
 use std::str::Utf8Error;
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
+use std::time::Duration;
 use thiserror::Error;
 use widestring::U16CString;
 use winapi::shared::winerror::DNS_REQUEST_PENDING;
@@ -97,6 +97,9 @@ impl TryFrom<PDNS_RECORD> for Service {
             interface_index: 0,
             domain: "".to_string(),
             event_type: ServiceEventType::Added,
+            hostname: "".to_string(),
+            port: 0,
+            txt_record: None,
         })
     }
 }
@@ -112,7 +115,7 @@ pub unsafe extern "C" fn browse_callback(status: DWORD, context: PVOID, record: 
         return;
     }
     let tx_ptr: *mut SyncSender<Service> = context as _;
-    let tx = &*tx_ptr;
+    let _tx = &*tx_ptr;
     match services_from_record_list(record) {
         Ok(services) => {
             info!("Services: {:?}", services);
@@ -133,7 +136,7 @@ pub unsafe extern "C" fn browse_callback(status: DWORD, context: PVOID, record: 
 pub struct ServiceBrowser {
     cancel: _DNS_SERVICE_CANCEL,
     context: *mut SyncSender<Service>,
-    receiver: Receiver<Service>,
+    _receiver: Receiver<Service>,
 }
 impl Drop for ServiceBrowser {
     fn drop(&mut self) {
@@ -152,6 +155,10 @@ impl ServiceBrowser {
             unsafe { Box::from_raw(self.context) };
             self.context = null_mut();
         }
+    }
+    /// Receives any newly discovered services if any
+    pub fn recv_timeout(&self, _timeout: Duration) -> Result<Service> {
+        Err(BrowseError::Timeout)
     }
 }
 pub fn browse(builder: ServiceBrowserBuilder) -> Result<ServiceBrowser> {
@@ -178,7 +185,7 @@ pub fn browse(builder: ServiceBrowserBuilder) -> Result<ServiceBrowser> {
         Ok(ServiceBrowser {
             cancel,
             context: tx,
-            receiver: rx,
+            _receiver: rx,
         })
     }
 }

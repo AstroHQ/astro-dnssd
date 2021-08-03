@@ -1,10 +1,12 @@
-use std::time::Duration;
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", feature = "win-bonjour"))]
 mod os {
     use super::*;
     use winapi::um::winsock2::{WSAPoll, POLLIN, SOCKET, SOCKET_ERROR, WSAPOLLFD};
 
-    pub fn socket_is_ready(socket: SOCKET, timeout: Duration) -> Result<bool, std::io::Error> {
+    pub fn socket_is_ready(
+        socket: SOCKET,
+        timeout: std::time::Duration,
+    ) -> Result<bool, std::io::Error> {
         let info = WSAPOLLFD {
             fd: socket,
             events: POLLIN,
@@ -39,7 +41,10 @@ mod os {
 #[cfg(not(target_os = "windows"))]
 mod os {
     use super::*;
-    pub fn socket_is_ready(socket: i32, timeout: Duration) -> Result<bool, std::io::Error> {
+    pub fn socket_is_ready(
+        socket: i32,
+        timeout: std::time::Duration,
+    ) -> Result<bool, std::io::Error> {
         unsafe {
             let fd = socket;
             let mut timeout = libc::timeval {
@@ -60,5 +65,5 @@ mod os {
         }
     }
 }
-
+#[cfg(any(not(target_os = "windows"), feature = "win-bonjour"))]
 pub use os::socket_is_ready;
