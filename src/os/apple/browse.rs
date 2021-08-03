@@ -1,7 +1,9 @@
 use crate::ffi::apple as ffi;
 // use std::collections::HashMap;
 use crate::browse::{Service, ServiceEventType};
+use crate::ffi::apple::kDNSServiceErr_NoError;
 use crate::ServiceBrowserBuilder;
+use std::collections::HashMap;
 use std::ffi::{c_void, CStr, CString};
 use std::io::{Error as IoError, ErrorKind};
 use std::net::{SocketAddr, ToSocketAddrs};
@@ -40,7 +42,7 @@ pub enum BrowseError {
 /// Apple based DNS-SD result type
 pub type Result<T, E = BrowseError> = std::result::Result<T, E>;
 
-unsafe extern "C" fn reply_callback(
+unsafe extern "C" fn browse_callback(
     _sd_ref: ffi::DNSServiceRef,
     flags: ffi::DNSServiceFlags,
     interface_index: u32,
@@ -51,7 +53,7 @@ unsafe extern "C" fn reply_callback(
     context: *mut c_void,
 ) {
     if !context.is_null() {
-        let tx_ptr: *mut SyncSender<Result<Service>> = context as _;
+        let tx_ptr: *mut SyncSender<Result<DiscoveredService>> = context as _;
         let tx = &*tx_ptr;
 
         // shouldn't need any other args if there's an error
@@ -87,13 +89,14 @@ unsafe extern "C" fn reply_callback(
         };
         match process() {
             Ok((name, regtype, domain)) => {
-                let service = Service {
+                let mut service = DiscoveredService {
                     name,
                     regtype,
                     interface_index,
                     domain,
                     event_type: flags.into(),
                 };
+                trace!("Informing of discovered service: {:?}", service);
                 match tx.try_send(Ok(service)) {
                     Ok(_) => {}
                     Err(e) => {
@@ -109,6 +112,84 @@ unsafe extern "C" fn reply_callback(
             },
         }
     }
+}
+
+/// Encapsulates information about a service
+#[derive(Debug)]
+pub struct DiscoveredService {
+    /// Name of service, usually a user friendly name
+    pub name: String,
+    /// Registration type, i.e. _http._tcp.
+    pub regtype: String,
+    /// Interface index (unsure what this is for)
+    pub interface_index: u32,
+    /// Domain service is on, typically local.
+    pub domain: String,
+    /// Whether this service is being added or not
+    pub event_type: ServiceEventType,
+}
+
+fn service_from_resolved(discovered: DiscoveredService, resolved: Vec<ResolvedService>) -> Service {
+    if resolved.len() > 1 {
+        warn!("We resolved > 1 services, unsupported. using first");
+    }
+    let (port, hostname, txt_record) = match resolved.into_iter().next() {
+        Some(resolved) => (resolved.port, resolved.hostname, resolved.txt_record),
+        None => (0, "".to_string(), None),
+    };
+    Service {
+        name: discovered.name,
+        domain: discovered.domain,
+        regtype: discovered.regtype,
+        interface_index: discovered.interface_index,
+        event_type: discovered.event_type,
+        hostname,
+        port,
+        txt_record,
+    }
+}
+
+fn resolver_thread(rx: Receiver<Result<DiscoveredService>>, tx: SyncSender<Result<Service>>) {
+    std::thread::Builder::new()
+        .name("astro-dnssd: resolver".into())
+        .spawn(move || loop {
+            match rx.recv_timeout(Duration::from_millis(250)) {
+                Ok(Ok(service)) => {
+                    trace!("Got new service: {:?}, resolving...", service);
+                    match service.resolve() {
+                        Ok(resolved) => {
+                            trace!("Resolved: {:?}", resolved);
+                            let service = service_from_resolved(service, resolved);
+                            match tx.send(Ok(service)) {
+                                Ok(_) => {}
+                                Err(_e) => {
+                                    error!("Error sending resolved service, disconnected channel, exiting thread");
+                                    break;
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            error!("Error resolving: {:?}", e);
+                            if let Err(_e) = tx.send(Err(e)) {
+                                error!("Error sending resolved service, disconnected channel, exiting thread");
+                                break;
+                            }
+                        }
+                    }
+                }
+                Ok(Err(e)) => {
+                    if let Err(_e) = tx.send(Err(e)) {
+                        error!("Error sending resolved service, disconnected channel, exiting thread");
+                        break;
+                    }
+                }
+                Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => {
+                    error!("Resolver channel disconnected, exiting thread");
+                    break;
+                }
+            }
+        }).expect("Failed to start resolver thread");
 }
 
 /// Main service browser, calls callback upon discovery of service
@@ -137,22 +218,13 @@ impl ServiceBrowser {
     }
 
     /// returns true if the socket has data and process_result() should be called
-    pub fn has_data(&self, timeout: Duration) -> Result<bool> {
+    fn has_data(&self, timeout: Duration) -> Result<bool> {
         let socket = unsafe { ffi::DNSServiceRefSockFD(self.raw) } as _;
         let r = crate::non_blocking::socket_is_ready(socket, timeout)?;
         Ok(r)
-        // unsafe {
-        //     let fd = self.socket();
-        //     let mut timeout = libc::timeval { tv_sec: 5, tv_usec: 0 };
-        //     let mut read_set = mem::uninitialized();
-        //     libc::FD_ZERO(&mut read_set);
-        //     libc::FD_SET(fd, &mut read_set);
-        //     libc::select(fd + 1, &mut read_set, ptr::null_mut(), ptr::null_mut(), &mut timeout);
-        //     libc::FD_ISSET(fd, &mut read_set)
-        // }
     }
 
-    /// Starts browser with given callback that'll be called upon discovery
+    /// Starts browser with type & optional domain
     fn start(regtype: String, domain: Option<String>) -> Result<Self> {
         unsafe {
             let c_domain: Option<CString>;
@@ -163,7 +235,7 @@ impl ServiceBrowser {
             }
             let service_type =
                 CString::new(regtype.as_str()).map_err(|_| BrowseError::InvalidString)?;
-            let (tx, rx) = sync_channel::<Result<Service>>(10);
+            let (tx, rx) = sync_channel::<Result<DiscoveredService>>(10);
             let tx = Box::into_raw(Box::new(tx));
             let mut raw: ffi::DNSServiceRef = ptr::null_mut();
             let r = ffi::DNSServiceBrowse(
@@ -172,14 +244,16 @@ impl ServiceBrowser {
                 0,
                 service_type.as_ptr(),
                 c_domain.map_or(ptr::null_mut(), |d| d.as_ptr()),
-                Some(reply_callback),
+                Some(browse_callback),
                 tx as _,
             );
             if r != ffi::kDNSServiceErr_NoError {
                 error!("DNSServiceBrowser error: {}", r);
                 return Err(BrowseError::ServiceError(r));
             }
-            Ok(ServiceBrowser { raw, rx })
+            let (final_tx, final_rx) = sync_channel::<Result<Service>>(10);
+            resolver_thread(rx, final_tx);
+            Ok(ServiceBrowser { raw, rx: final_rx })
         }
     }
     /// Returns discovered services if any
@@ -218,4 +292,178 @@ unsafe impl Send for ServiceBrowser {}
 
 pub fn browse(builder: ServiceBrowserBuilder) -> Result<ServiceBrowser> {
     Ok(ServiceBrowser::start(builder.regtype, builder.domain)?)
+}
+macro_rules! mut_void_ptr {
+    ($var:expr) => {
+        $var as *mut _ as *mut c_void
+    };
+}
+impl DiscoveredService {
+    fn resolve(&self) -> Result<Vec<ResolvedService>> {
+        let mut sdref: ffi::DNSServiceRef = unsafe { std::mem::zeroed() };
+        let regtype =
+            CString::new(self.regtype.as_str()).map_err(|_| BrowseError::InvalidString)?;
+        let name = CString::new(self.name.as_str()).map_err(|_| BrowseError::InvalidString)?;
+        let domain = CString::new(self.domain.as_str()).map_err(|_| BrowseError::InvalidString)?;
+        let mut pending_resolution: PendingResolution = Default::default();
+        unsafe {
+            let r = ffi::DNSServiceResolve(
+                &mut sdref,
+                0,
+                self.interface_index,
+                name.as_ptr(),
+                regtype.as_ptr(),
+                domain.as_ptr(),
+                Some(resolve_callback),
+                mut_void_ptr!(&mut pending_resolution),
+            );
+            if r != kDNSServiceErr_NoError {
+                return Err(BrowseError::ServiceError(r));
+            }
+            while pending_resolution.more_coming {
+                ffi::DNSServiceProcessResult(sdref);
+            }
+            ffi::DNSServiceRefDeallocate(sdref);
+        }
+
+        Ok(pending_resolution.results)
+    }
+}
+
+struct PendingResolution {
+    more_coming: bool,
+    results: Vec<ResolvedService>,
+}
+impl Default for PendingResolution {
+    fn default() -> Self {
+        PendingResolution {
+            more_coming: true, // default to true, just as a way to say yes for first entry
+            results: Vec::with_capacity(1),
+        }
+    }
+}
+
+/// Resolved service information, name, hostname, port, & TXT record if any
+#[derive(Debug)]
+pub struct ResolvedService {
+    /// Full name of service
+    pub full_name: String,
+    /// Hostname of service, usable with gethostbyname()
+    pub hostname: String,
+    /// Port service is on
+    pub port: u16,
+    /// TXT record service has if any
+    pub txt_record: Option<HashMap<String, String>>,
+    interface_index: u32,
+}
+impl ToSocketAddrs for ResolvedService {
+    type Iter = std::vec::IntoIter<SocketAddr>;
+    /// Leverages Rust's ToSocketAddrs to resolve service hostname & port, host needs integrated bonjour support to work
+    fn to_socket_addrs(&self) -> std::io::Result<Self::Iter> {
+        (self.hostname.as_str(), self.port).to_socket_addrs()
+    }
+}
+
+unsafe extern "C" fn resolve_callback(
+    _sd_ref: ffi::DNSServiceRef,
+    flags: ffi::DNSServiceFlags,
+    interface_index: u32,
+    error_code: ffi::DNSServiceErrorType,
+    full_name: *const c_char,
+    host_target: *const c_char,
+    port: u16, // network byte order
+    txt_len: u16,
+    txt_record: *const u8,
+    context: *mut c_void,
+) {
+    let context: &mut PendingResolution = &mut *(context as *mut PendingResolution);
+    if error_code != ffi::kDNSServiceErr_NoError {
+        error!("Error resolving service: {}", error_code);
+        context.more_coming = false;
+        return;
+    }
+    // flag if we have more records coming so we can fetch them before stopping resolution
+    context.more_coming = flags & ffi::kDNSServiceFlagsMoreComing as u32 != 0;
+    let process = || -> Result<(String, String)> {
+        let c_str: &CStr = CStr::from_ptr(full_name);
+        let full_name: &str = c_str
+            .to_str()
+            .map_err(|_| BrowseError::InternalInvalidString)?;
+        let c_str: &CStr = CStr::from_ptr(host_target);
+        let hostname: &str = c_str
+            .to_str()
+            .map_err(|_| BrowseError::InternalInvalidString)?;
+        Ok((full_name.to_owned(), hostname.to_owned()))
+    };
+    let txt_record = if txt_len > 0 {
+        let data = std::slice::from_raw_parts(txt_record, txt_len as usize);
+        match hash_from_txt(data) {
+            Ok(hash) => Some(hash),
+            Err(e) => {
+                error!("Failed to get TXT record: {:?}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+    match process() {
+        Ok((full_name, hostname)) => {
+            let service = ResolvedService {
+                full_name,
+                hostname,
+                port: u16::from_be(port),
+                txt_record,
+                interface_index,
+            };
+            context.results.push(service);
+        }
+        Err(e) => {
+            error!("Error resolving service: {:?}", e);
+        }
+    }
+}
+
+fn hash_from_txt(data: &[u8]) -> Result<HashMap<String, String>> {
+    let slice = data;
+    let txt_len = slice.len() as u16;
+    let txt_bytes = slice.as_ptr() as *const c_void;
+
+    unsafe {
+        let total_keys = ffi::TXTRecordGetCount(txt_len, txt_bytes);
+        let mut hash: HashMap<String, String> = HashMap::with_capacity(total_keys as _);
+        for i in 0..total_keys {
+            // index is u16 so we can't go over u16::max_value() but likely will end before that
+            let mut key: [c_char; 256] = std::mem::zeroed();
+            let mut value = std::mem::zeroed();
+            let mut value_len: u8 = 0;
+            let err = ffi::TXTRecordGetItemAtIndex(
+                txt_len,
+                txt_bytes,
+                i,
+                key.len() as u16,
+                key.as_mut_ptr(),
+                &mut value_len,
+                &mut value,
+            );
+            if err == ffi::kDNSServiceErr_NoError {
+                let c_str: &CStr = CStr::from_ptr(key.as_ptr());
+                let key: &str = c_str.to_str().unwrap();
+                let data = std::slice::from_raw_parts(value as *mut u8, value_len as _);
+                match std::str::from_utf8(data) {
+                    Ok(value) => {
+                        hash.insert(key.to_owned(), value.to_owned());
+                    }
+                    Err(e) => {
+                        error!("Error processing TXT value as UTF-8: {}", e);
+                    }
+                }
+            }
+            if err == ffi::kDNSServiceErr_Invalid {
+                error!("Error invalid fetching TXT");
+                break;
+            }
+        }
+        Ok(hash)
+    }
 }

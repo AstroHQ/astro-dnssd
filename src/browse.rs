@@ -1,6 +1,7 @@
 pub use crate::os::{BrowseError, ServiceBrowser};
-use std::io::Error as IoError;
-use thiserror::Error;
+use std::collections::HashMap;
+// use std::io::Error as IoError;
+// use thiserror::Error;
 
 /// Service browsing result type
 pub type Result<T, E = BrowseError> = std::result::Result<T, E>;
@@ -31,6 +32,14 @@ pub struct Service {
     pub domain: String,
     /// Whether this service is being added or not
     pub event_type: ServiceEventType,
+    // /// Full name of service
+    // pub full_name: String,
+    /// Hostname of service, usable with gethostbyname()
+    pub hostname: String,
+    /// Port service is on
+    pub port: u16,
+    /// TXT record service has if any
+    pub txt_record: Option<HashMap<String, String>>,
 }
 
 /// Builder for creating a browser, allowing optionally specifying a domain with chaining (maybe builder is excessive)
