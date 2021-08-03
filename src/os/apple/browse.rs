@@ -398,7 +398,8 @@ unsafe extern "C" fn resolve_callback(
     let txt_record = if txt_len > 0 {
         let data = std::slice::from_raw_parts(txt_record, txt_len as usize);
         match hash_from_txt(data) {
-            Ok(hash) => Some(hash),
+            Ok(hash) if hash.len() > 0 => Some(hash),
+            Ok(_hash) => None,
             Err(e) => {
                 error!("Failed to get TXT record: {:?}", e);
                 None
@@ -451,8 +452,11 @@ fn hash_from_txt(data: &[u8]) -> Result<HashMap<String, String>> {
                 let key: &str = c_str.to_str().unwrap();
                 let data = std::slice::from_raw_parts(value as *mut u8, value_len as _);
                 match std::str::from_utf8(data) {
-                    Ok(value) => {
+                    Ok(value) if key.len() > 0 && value.len() > 0 => {
                         hash.insert(key.to_owned(), value.to_owned());
+                    }
+                    Ok(_value) => {
+                        trace!("Discarding TXT key with empty key & value");
                     }
                     Err(e) => {
                         error!("Error processing TXT value as UTF-8: {}", e);
