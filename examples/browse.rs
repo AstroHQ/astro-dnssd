@@ -6,7 +6,7 @@ use std::io::ErrorKind;
 use std::time::Duration;
 
 fn main() {
-    env_logger::from_env(Env::default().default_filter_or("info")).init();
+    env_logger::from_env(Env::default().default_filter_or("trace")).init();
     info!("Starting browser...");
     let browser = ServiceBrowserBuilder::new("_http._tcp").browse();
     match browser {
