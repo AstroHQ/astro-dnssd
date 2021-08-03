@@ -129,7 +129,7 @@ pub unsafe extern "C" fn browse_callback(status: DWORD, context: PVOID, record: 
     }
     DnsFree(record as _, DNS_FREE_TYPE_DnsFreeRecordList);
 }
-
+/// Service browser for DNS-SD services
 pub struct ServiceBrowser {
     cancel: _DNS_SERVICE_CANCEL,
     context: *mut SyncSender<Service>,

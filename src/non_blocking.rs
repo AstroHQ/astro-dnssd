@@ -2,10 +2,9 @@ use std::time::Duration;
 #[cfg(target_os = "windows")]
 mod os {
     use super::*;
-    use crate::DNSServiceError;
     use winapi::um::winsock2::{WSAPoll, POLLIN, SOCKET, SOCKET_ERROR, WSAPOLLFD};
 
-    pub fn socket_is_ready(socket: SOCKET, timeout: Duration) -> Result<bool, DNSServiceError> {
+    pub fn socket_is_ready(socket: SOCKET, timeout: Duration) -> Result<bool, std::io::Error> {
         let info = WSAPOLLFD {
             fd: socket,
             events: POLLIN,
@@ -30,7 +29,7 @@ mod os {
             // TODO: figure out why no flags are set, or maybe switch to IOCP
             Ok(true)
         } else if r == SOCKET_ERROR {
-            Err(crate::DNSServiceError::ServiceError(r))
+            Err(std::io::Error::from_raw_os_error(r))
         } else {
             trace!("Nothing ready");
             Ok(false)
