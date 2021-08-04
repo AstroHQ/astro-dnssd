@@ -2,11 +2,12 @@ use crate::browse::{Result, Service, ServiceEventType};
 use crate::ffi::windows::{
     DNS_FREE_TYPE_DnsFreeRecordList, DnsFree, DnsServiceBrowse, DnsServiceBrowseCancel,
     _DNS_SERVICE_BROWSE_REQUEST__bindgen_ty_1 as BrowseCallbackUnion, DNS_QUERY_REQUEST_VERSION1,
-    DNS_TYPE_A, DNS_TYPE_AAAA, DNS_TYPE_PTR, DNS_TYPE_SRV, DNS_TYPE_TEXT, DWORD, PDNS_RECORD,
-    PVOID, _DNS_SERVICE_BROWSE_REQUEST, _DNS_SERVICE_CANCEL,
+    DNS_TXT_DATAW, DNS_TYPE_A, DNS_TYPE_AAAA, DNS_TYPE_PTR, DNS_TYPE_SRV, DNS_TYPE_TEXT, DWORD,
+    PDNS_RECORD, PVOID, _DNS_SERVICE_BROWSE_REQUEST, _DNS_SERVICE_CANCEL,
 };
 use crate::os::windows::to_utf16;
 use crate::ServiceBrowserBuilder;
+use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::io::{Error as IoError, ErrorKind};
 use std::net::{Ipv4Addr, Ipv6Addr};
@@ -15,7 +16,7 @@ use std::str::Utf8Error;
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::time::Duration;
 use thiserror::Error;
-use widestring::U16CString;
+use widestring::{U16CStr, U16CString, U16Str};
 use winapi::shared::winerror::DNS_REQUEST_PENDING;
 
 /// Error while browsing for DNS-SD services
@@ -34,21 +35,45 @@ pub enum BrowseError {
     #[error("Error creating string from UTF8: {0}")]
     Utf8StringError(#[from] Utf8Error),
 }
+enum DnsRecord {
+    Ptr(String),
+    Srv(u16),
+    Txt(HashMap<String, String>),
+    A(Ipv4Addr),
+    Aaaa(Ipv6Addr),
+}
 
-fn services_from_record_list(start_record: PDNS_RECORD) -> Result<Vec<Service>> {
-    let mut services = vec![];
+fn services_from_record_list(start_record: PDNS_RECORD) -> Result<Service> {
+    let mut service = Service {
+        name: "".to_string(),
+        regtype: "".to_string(),
+        interface_index: 0,
+        domain: "".to_string(),
+        event_type: ServiceEventType::Added,
+        hostname: "".to_string(),
+        port: 0,
+        txt_record: None,
+    };
     let mut current_record = start_record;
     while !current_record.is_null() {
-        let service = Service::try_from(current_record)?;
-        services.push(service);
+        match DnsRecord::try_from(current_record) {
+            Ok(DnsRecord::Ptr(name)) => service.name = name,
+            Ok(DnsRecord::Srv(port)) => service.port = port,
+            Ok(DnsRecord::Txt(hash)) => service.txt_record = Some(hash),
+            Ok(DnsRecord::A(_ip)) => {}
+            Ok(DnsRecord::Aaaa(_ip)) => {}
+            Err(e) => {
+                error!("Error processing DNS record, skipping it: {:?}", e);
+            }
+        }
         unsafe {
             current_record = (*current_record).pNext;
         }
     }
-    Ok(services)
+    Ok(service)
 }
 
-impl TryFrom<PDNS_RECORD> for Service {
+impl TryFrom<PDNS_RECORD> for DnsRecord {
     type Error = BrowseError;
 
     fn try_from(record: PDNS_RECORD) -> std::result::Result<Self, Self::Error> {
@@ -56,51 +81,70 @@ impl TryFrom<PDNS_RECORD> for Service {
             return Err(IoError::from(ErrorKind::InvalidData).into());
         }
         let t = unsafe { (*record).wType } as u32; // what type of record
-        let mut ptr_name = String::from("Unknown");
+                                                   // let mut ptr_name = String::from("Unknown");
         match t {
             DNS_TYPE_PTR => unsafe {
                 let data = (*record).Data.Ptr;
                 let name = U16CString::from_ptr_str(data.pNameHost);
                 let name = name.to_string_lossy();
                 info!("PTR Name: {}", name);
-                ptr_name = name;
+                Ok(DnsRecord::Ptr(name))
             },
             DNS_TYPE_SRV => unsafe {
                 let data = (*record).Data.Srv;
                 let port = data.wPort;
                 info!("Port: {}", port);
+                Ok(DnsRecord::Srv(port))
             },
             DNS_TYPE_TEXT => unsafe {
-                let data = (*record).Data.Txt;
-                info!("TXT records: {}", data.dwStringCount);
+                let txt: DNS_TXT_DATAW = (*record).Data.Txt;
+                info!("TXT records: {}", txt.dwStringCount);
+                let mut ptr = txt.pStringArray[0];
+                // let test =
+                //     std::slice::from_raw_parts(data.pStringArray.as_ptr(), data.dwStringCount as _);
+                // info!("Data: {:?}", test);
+                if txt.dwStringCount > 1 {
+                    info!("We got > 1 strings");
+                }
+                for _i in 0..txt.dwStringCount as usize {
+                    let s = U16CStr::from_ptr_str(ptr);
+                    let len = s.len() as isize;
+                    info!("TXT: {} ({} chars)", s.to_string_lossy(), len);
+                    ptr = ptr.offset(len + 2);
+                }
+
+                Ok(DnsRecord::Txt(HashMap::new()))
             },
             DNS_TYPE_A => unsafe {
                 let data = (*record).Data.A;
                 let ip = Ipv4Addr::from(data.IpAddress.to_le_bytes());
                 info!("IP Address: {}", ip);
+                Ok(DnsRecord::A(ip))
             },
             DNS_TYPE_AAAA => unsafe {
                 let data = (*record).Data.AAAA;
                 let addr = data.Ip6Address; // TODO: bytes are wrong order here
                 let ip = Ipv6Addr::from(addr.IP6Word);
                 info!("IPv6 Address: {}", ip);
+                Ok(DnsRecord::Aaaa(ip))
             },
             _ => {
                 warn!("Got record: {:?}, unhandled type", t);
+                Err(IoError::from(ErrorKind::InvalidData).into())
             }
         }
 
-        let regtype = unsafe { U16CString::from_ptr_str((*record).pName) };
-        Ok(Service {
-            name: ptr_name,
-            regtype: regtype.to_string_lossy(),
-            interface_index: 0,
-            domain: "".to_string(),
-            event_type: ServiceEventType::Added,
-            hostname: "".to_string(),
-            port: 0,
-            txt_record: None,
-        })
+        // let regtype = unsafe { U16CString::from_ptr_str((*record).pName) };
+        // Ok(Service {
+        //     name: ptr_name,
+        //     regtype: regtype.to_string_lossy(),
+        //     interface_index: 0,
+        //     domain: "".to_string(),
+        //     event_type: ServiceEventType::Added,
+        //     hostname: "".to_string(),
+        //     port: 0,
+        //     txt_record: None,
+        // })
     }
 }
 
