@@ -6,7 +6,7 @@ use std::io::ErrorKind;
 use std::time::Duration;
 
 fn main() {
-    env_logger::from_env(Env::default().default_filter_or("trace")).init();
+    env_logger::from_env(Env::default().default_filter_or("info")).init();
     info!("Starting browser...");
     let browser = ServiceBrowserBuilder::new("_http._tcp").browse();
     match browser {
@@ -18,6 +18,9 @@ fn main() {
                         info!("Service found: {:?}", service);
                     }
                     Err(BrowseError::IoError(e)) if e.kind() == ErrorKind::TimedOut => {
+                        std::thread::sleep(Duration::from_millis(100));
+                    }
+                    Err(BrowseError::Timeout) => {
                         std::thread::sleep(Duration::from_millis(100));
                     }
                     Err(e) => {

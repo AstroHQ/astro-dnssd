@@ -27,7 +27,7 @@ pub struct Service {
     /// Registration type, i.e. _http._tcp.
     pub regtype: String,
     /// Interface index (unsure what this is for)
-    pub interface_index: u32,
+    pub interface_index: Option<u32>,
     /// Domain service is on, typically local.
     pub domain: String,
     /// Whether this service is being added or not
