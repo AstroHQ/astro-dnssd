@@ -2,8 +2,8 @@ use crate::browse::{Result, Service, ServiceEventType};
 use crate::ffi::windows::{
     DNS_FREE_TYPE_DnsFreeRecordList, DnsFree, DnsServiceBrowse, DnsServiceBrowseCancel,
     _DNS_SERVICE_BROWSE_REQUEST__bindgen_ty_1 as BrowseCallbackUnion, DNS_QUERY_REQUEST_VERSION1,
-    DNS_TXT_DATAW, DNS_TYPE_A, DNS_TYPE_AAAA, DNS_TYPE_PTR, DNS_TYPE_SRV, DNS_TYPE_TEXT, DWORD,
-    PDNS_RECORD, PVOID, _DNS_SERVICE_BROWSE_REQUEST, _DNS_SERVICE_CANCEL,
+    DNS_TYPE_A, DNS_TYPE_AAAA, DNS_TYPE_PTR, DNS_TYPE_SRV, DNS_TYPE_TEXT, DWORD, PDNS_RECORD,
+    PVOID, _DNS_SERVICE_BROWSE_REQUEST, _DNS_SERVICE_CANCEL,
 };
 use crate::os::windows::to_utf16;
 use crate::ServiceBrowserBuilder;
@@ -13,10 +13,10 @@ use std::io::{Error as IoError, ErrorKind};
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::ptr::null_mut;
 use std::str::Utf8Error;
-use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
+use std::sync::mpsc::{sync_channel, Receiver, RecvTimeoutError, SyncSender};
 use std::time::Duration;
 use thiserror::Error;
-use widestring::{U16CStr, U16CString, U16Str};
+use widestring::{U16CStr, U16CString};
 use winapi::shared::winerror::DNS_REQUEST_PENDING;
 
 /// Error while browsing for DNS-SD services
@@ -43,11 +43,21 @@ enum DnsRecord {
     Aaaa(Ipv6Addr),
 }
 
+fn process_name(name: &str) -> Option<(String, String, String)> {
+    // split doesn't do reverse so collect then reverse...
+    let mut split = name.split(".").collect::<Vec<&str>>().into_iter().rev();
+    let domain = split.next()?;
+    let ip_protocol = split.next()?;
+    let protocol = split.next()?;
+    let name: String = split.collect::<Vec<&str>>().join(".");
+    Some((name, format!("{}.{}", protocol, ip_protocol), domain.into()))
+}
+
 fn services_from_record_list(start_record: PDNS_RECORD) -> Result<Service> {
     let mut service = Service {
         name: "".to_string(),
         regtype: "".to_string(),
-        interface_index: 0,
+        interface_index: None,
         domain: "".to_string(),
         event_type: ServiceEventType::Added,
         hostname: "".to_string(),
@@ -57,9 +67,21 @@ fn services_from_record_list(start_record: PDNS_RECORD) -> Result<Service> {
     let mut current_record = start_record;
     while !current_record.is_null() {
         match DnsRecord::try_from(current_record) {
-            Ok(DnsRecord::Ptr(name)) => service.name = name,
+            Ok(DnsRecord::Ptr(name)) => match process_name(&name) {
+                Some((name, regtype, domain)) => {
+                    service.hostname = format!("{}.{}", name, domain);
+                    service.name = name;
+                    service.regtype = regtype;
+                    service.domain = domain;
+                }
+                None => {}
+            },
             Ok(DnsRecord::Srv(port)) => service.port = port,
-            Ok(DnsRecord::Txt(hash)) => service.txt_record = Some(hash),
+            Ok(DnsRecord::Txt(hash)) => {
+                if hash.len() > 0 {
+                    service.txt_record = Some(hash);
+                }
+            }
             Ok(DnsRecord::A(_ip)) => {}
             Ok(DnsRecord::Aaaa(_ip)) => {}
             Err(e) => {
@@ -87,45 +109,53 @@ impl TryFrom<PDNS_RECORD> for DnsRecord {
                 let data = (*record).Data.Ptr;
                 let name = U16CString::from_ptr_str(data.pNameHost);
                 let name = name.to_string_lossy();
-                info!("PTR Name: {}", name);
+                trace!("PTR Name: {}", name);
                 Ok(DnsRecord::Ptr(name))
             },
             DNS_TYPE_SRV => unsafe {
                 let data = (*record).Data.Srv;
                 let port = data.wPort;
-                info!("Port: {}", port);
+                trace!("Port: {}", port);
                 Ok(DnsRecord::Srv(port))
             },
             DNS_TYPE_TEXT => unsafe {
-                let txt: DNS_TXT_DATAW = (*record).Data.Txt;
-                info!("TXT records: {}", txt.dwStringCount);
-                let mut ptr = txt.pStringArray[0];
-                // let test =
-                //     std::slice::from_raw_parts(data.pStringArray.as_ptr(), data.dwStringCount as _);
-                // info!("Data: {:?}", test);
-                if txt.dwStringCount > 1 {
-                    info!("We got > 1 strings");
-                }
-                for _i in 0..txt.dwStringCount as usize {
-                    let s = U16CStr::from_ptr_str(ptr);
-                    let len = s.len() as isize;
-                    info!("TXT: {} ({} chars)", s.to_string_lossy(), len);
-                    ptr = ptr.offset(len + 2);
+                let strings = std::slice::from_raw_parts(
+                    (*record).Data.Txt.pStringArray.as_ptr(),
+                    (*record).Data.Txt.dwStringCount as _,
+                );
+                let mut hash = HashMap::with_capacity(strings.len());
+                for str_ptr in strings {
+                    match U16CStr::from_ptr_str(*str_ptr).to_string() {
+                        Ok(s) => {
+                            let mut split = s.split("=");
+                            match (split.next(), split.next()) {
+                                (Some(k), Some(v)) => {
+                                    hash.insert(k.to_string(), v.to_string());
+                                }
+                                _ => {
+                                    warn!("Failed to get key=value from TXT string: {}", s);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            error!("Error parsing TXT string: {:?}", e);
+                        }
+                    }
                 }
 
-                Ok(DnsRecord::Txt(HashMap::new()))
+                Ok(DnsRecord::Txt(hash))
             },
             DNS_TYPE_A => unsafe {
                 let data = (*record).Data.A;
                 let ip = Ipv4Addr::from(data.IpAddress.to_le_bytes());
-                info!("IP Address: {}", ip);
+                trace!("IP Address: {}", ip);
                 Ok(DnsRecord::A(ip))
             },
             DNS_TYPE_AAAA => unsafe {
                 let data = (*record).Data.AAAA;
                 let addr = data.Ip6Address; // TODO: bytes are wrong order here
                 let ip = Ipv6Addr::from(addr.IP6Word);
-                info!("IPv6 Address: {}", ip);
+                trace!("IPv6 Address: {}", ip);
                 Ok(DnsRecord::Aaaa(ip))
             },
             _ => {
@@ -133,18 +163,6 @@ impl TryFrom<PDNS_RECORD> for DnsRecord {
                 Err(IoError::from(ErrorKind::InvalidData).into())
             }
         }
-
-        // let regtype = unsafe { U16CString::from_ptr_str((*record).pName) };
-        // Ok(Service {
-        //     name: ptr_name,
-        //     regtype: regtype.to_string_lossy(),
-        //     interface_index: 0,
-        //     domain: "".to_string(),
-        //     event_type: ServiceEventType::Added,
-        //     hostname: "".to_string(),
-        //     port: 0,
-        //     txt_record: None,
-        // })
     }
 }
 
@@ -159,16 +177,16 @@ pub unsafe extern "C" fn browse_callback(status: DWORD, context: PVOID, record: 
         return;
     }
     let tx_ptr: *mut SyncSender<Service> = context as _;
-    let _tx = &*tx_ptr;
+    let tx = &*tx_ptr;
     match services_from_record_list(record) {
-        Ok(services) => {
-            info!("Services: {:?}", services);
-            // match tx.send(service) {
-            //     Ok(_) => {}
-            //     Err(e) => {
-            //         error!("Error sending service info: {:?}", e);
-            //     }
-            // }
+        Ok(service) => {
+            trace!("{:?}", service);
+            match tx.send(service) {
+                Ok(_) => {}
+                Err(e) => {
+                    error!("Error sending service info: {:?}", e);
+                }
+            }
         }
         Err(e) => {
             error!("Error creating services from PDNS_RECORD: {:?}", e);
@@ -180,7 +198,7 @@ pub unsafe extern "C" fn browse_callback(status: DWORD, context: PVOID, record: 
 pub struct ServiceBrowser {
     cancel: _DNS_SERVICE_CANCEL,
     context: *mut SyncSender<Service>,
-    _receiver: Receiver<Service>,
+    receiver: Receiver<Service>,
 }
 impl Drop for ServiceBrowser {
     fn drop(&mut self) {
@@ -201,8 +219,14 @@ impl ServiceBrowser {
         }
     }
     /// Receives any newly discovered services if any
-    pub fn recv_timeout(&self, _timeout: Duration) -> Result<Service> {
-        Err(BrowseError::Timeout)
+    pub fn recv_timeout(&self, timeout: Duration) -> Result<Service> {
+        match self.receiver.recv_timeout(timeout) {
+            Ok(service) => Ok(service),
+            Err(RecvTimeoutError::Timeout) => Err(BrowseError::Timeout),
+            Err(RecvTimeoutError::Disconnected) => {
+                Err(BrowseError::IoError(IoError::from(ErrorKind::BrokenPipe)))
+            }
+        }
     }
 }
 pub fn browse(builder: ServiceBrowserBuilder) -> Result<ServiceBrowser> {
@@ -229,7 +253,7 @@ pub fn browse(builder: ServiceBrowserBuilder) -> Result<ServiceBrowser> {
         Ok(ServiceBrowser {
             cancel,
             context: tx,
-            _receiver: rx,
+            receiver: rx,
         })
     }
 }

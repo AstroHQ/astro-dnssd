@@ -141,7 +141,7 @@ fn service_from_resolved(discovered: DiscoveredService, resolved: Vec<ResolvedSe
         name: discovered.name,
         domain: discovered.domain,
         regtype: discovered.regtype,
-        interface_index: discovered.interface_index,
+        interface_index: Some(discovered.interface_index),
         event_type: discovered.event_type,
         hostname,
         port,
