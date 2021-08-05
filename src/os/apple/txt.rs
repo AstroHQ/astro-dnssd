@@ -1,4 +1,5 @@
 //! TXT record creation & handling
+#![allow(dead_code)]
 
 use crate::ffi::apple::{
     kDNSServiceErr_NoError, TXTRecordContainsKey, TXTRecordCreate, TXTRecordDeallocate,
@@ -6,6 +7,7 @@ use crate::ffi::apple::{
     TXTRecordRef, TXTRecordRemoveValue, TXTRecordSetValue,
 };
 use crate::os::apple::register::RegistrationError;
+use std::collections::HashMap;
 use std::ffi::{c_void, CString};
 use std::mem;
 use std::ptr;
@@ -18,6 +20,18 @@ pub struct TXTRecord {
 impl Default for TXTRecord {
     fn default() -> Self {
         TXTRecord::new()
+    }
+}
+
+impl From<HashMap<String, String>> for TXTRecord {
+    fn from(hash: HashMap<String, String>) -> Self {
+        let mut txt = TXTRecord::new();
+        for (key, value) in hash {
+            if let Err(e) = txt.insert(&key, Some(&value)) {
+                error!("Error inserting {}={} into TXTRecord: {:?}", key, value, e);
+            }
+        }
+        txt
     }
 }
 

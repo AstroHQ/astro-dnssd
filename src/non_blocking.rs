@@ -40,7 +40,6 @@ mod os {
 }
 #[cfg(not(target_os = "windows"))]
 mod os {
-    use super::*;
     pub fn socket_is_ready(
         socket: i32,
         timeout: std::time::Duration,

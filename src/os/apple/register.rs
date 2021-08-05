@@ -1,11 +1,11 @@
 //! Registration of dns-sd services
 
-use super::txt::TXTRecord;
+// use super::txt::TXTRecord;
 use crate::ffi::apple::{
     kDNSServiceErr_NoError, DNSServiceErrorType, DNSServiceFlags, DNSServiceProcessResult,
     DNSServiceRef, DNSServiceRefDeallocate, DNSServiceRefSockFD, DNSServiceRegister,
-    DNSServiceUpdateRecord,
 };
+use crate::os::apple::txt::TXTRecord;
 use crate::{register::Result, DNSServiceBuilder};
 use std::ffi::{c_void, CStr, CString};
 use std::fmt;
@@ -41,6 +41,7 @@ unsafe extern "C" fn register_reply(
     domain: *const c_char,
     context: *mut c_void,
 ) {
+    info!("Got reply");
     // let context: &mut RegisteredDnsService = &mut *(context as *mut RegisteredDnsService);
     let process = || -> Result<(String, String, String)> {
         let c_str: &CStr = CStr::from_ptr(name);
@@ -73,7 +74,8 @@ unsafe extern "C" fn register_reply(
                         name,
                         domain,
                     };
-                    tx.send((Ok(reply))).unwrap();
+                    tx.send(Ok(reply)).unwrap();
+                    info!("Reply info sent");
                 } else {
                     error!("Error in reply: {}", error_code);
                     tx.send(Err(RegistrationError::ServiceError(error_code)))
@@ -90,11 +92,11 @@ unsafe extern "C" fn register_reply(
 
 /// DNS-SD Service for registration use
 pub struct RegisteredDnsService {
-    raw: DNSServiceRef,
+    socket: i32,
 }
 impl fmt::Debug for RegisteredDnsService {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "RegisteredDnsService {{ raw: {:p} }}", self.raw)
+        write!(f, "RegisteredDnsService {{ socket: {} }}", self.socket)
     }
 }
 
@@ -109,61 +111,54 @@ pub struct DNSServiceRegisterReply {
     pub domain: String,
 }
 
-impl RegisteredDnsService {
-    // /// Get c_void ptr for use in C style context point arguments
-    // fn void_ptr(&mut self) -> *mut c_void {
-    //     self as *mut _ as *mut c_void
-    // }
-
-    /// Returns socket to mDNS service, use with select()
-    pub fn socket(&self) -> i32 {
-        unsafe { DNSServiceRefSockFD(self.raw) }
-    }
-
-    /// Processes a reply from mDNS service, blocking until there is one
-    /// To avoid blocking, check if `socket` is ready for reading
-    pub fn process_result(&self) -> DNSServiceErrorType {
-        unsafe { DNSServiceProcessResult(self.raw) }
-    }
-
-    // /// returns true if the socket has data and process_result() should be called
-    // pub fn has_data(&self) -> bool {
-    //     unsafe {
-    //         let fd = self.socket();
-    //         let mut timeout = libc::timeval { tv_sec: 5, tv_usec: 0 };
-    //         let mut read_set = mem::uninitialized();
-    //         libc::FD_ZERO(&mut read_set);
-    //         libc::FD_SET(fd, &mut read_set);
-    //         libc::select(fd + 1, &mut read_set, ptr::null_mut(), ptr::null_mut(), &mut timeout);
-    //         libc::FD_ISSET(fd, &mut read_set)
-    //     }
-    // }
-
-    // /// Updates service's primary TXT record, removing it if provided None
-    // pub fn update_txt_record(&mut self, mut txt: Option<TXTRecord>) -> Result<()> {
-    //     unsafe {
-    //         let (txt_record, txt_len) = match &mut txt {
-    //             Some(txt) => (txt.raw_bytes_ptr(), txt.raw_bytes_len()),
-    //             None => (ptr::null(), 0),
-    //         };
-    //         let result =
-    //             DNSServiceUpdateRecord(self.raw, ptr::null_mut(), 0, txt_len, txt_record, 0);
-    //         if result == kDNSServiceErr_NoError {
-    //             return Ok(());
-    //         }
-    //         Err(DNSServiceError::ServiceError(result))
-    //     }
-    // }
+/// Service ref to encapsulate DNSServiceRef to send to a thread & cleanup on drop
+struct ServiceRef {
+    raw: DNSServiceRef,
+    context: *mut c_void,
 }
-
-impl Drop for RegisteredDnsService {
+impl ServiceRef {
+    fn new(raw: DNSServiceRef, context: *mut c_void) -> Self {
+        ServiceRef { raw, context }
+    }
+}
+unsafe impl Send for ServiceRef {}
+impl Drop for ServiceRef {
     fn drop(&mut self) {
         unsafe {
-            DNSServiceRefDeallocate(self.raw);
+            trace!("Dropping service");
+            if !self.raw.is_null() {
+                trace!("Deallocating DNSServiceRef");
+                DNSServiceRefDeallocate(self.raw);
+                self.raw = std::ptr::null_mut();
+                Box::from_raw(self.context);
+            }
         }
     }
 }
 
+impl RegisteredDnsService {}
+
+// In order to signal the blocked thread, we close its socket to unblock it
+impl Drop for RegisteredDnsService {
+    fn drop(&mut self) {
+        unsafe {
+            trace!("Closing socket to signal service cleanup...");
+            libc::close(self.socket);
+        }
+    }
+}
+fn run_thread(service: ServiceRef) {
+    std::thread::spawn(move || loop {
+        unsafe {
+            trace!("Processing...");
+            let r = DNSServiceProcessResult(service.raw);
+            if r != kDNSServiceErr_NoError {
+                error!("Error processing: {}, exiting thread", r);
+                break;
+            }
+        }
+    });
+}
 pub fn register_service(service: DNSServiceBuilder) -> Result<RegisteredDnsService> {
     unsafe {
         let c_name: Option<CString>;
@@ -175,11 +170,13 @@ pub fn register_service(service: DNSServiceBuilder) -> Result<RegisteredDnsServi
         let c_name = c_name.as_ref();
         let service_type =
             CString::new(service.regtype.as_str()).map_err(|_| RegistrationError::InvalidString)?;
-        // let (txt_record, txt_len) = match &mut service.txt {
-        //     Some(txt) => (txt.raw_bytes_ptr(), txt.raw_bytes_len()),
-        //     None => (ptr::null(), 0),
-        // };
-        let (tx, rx) = sync_channel::<Result<DNSServiceRegisterReply>>(1);
+        let txt = service.txt.and_then(|h| Some(TXTRecord::from(h)));
+        let (txt_record, txt_len) = match &txt {
+            Some(txt) => (txt.raw_bytes_ptr(), txt.raw_bytes_len()),
+            None => (ptr::null(), 0),
+        };
+
+        let (tx, rx) = sync_channel::<Result<DNSServiceRegisterReply>>(4);
         let tx = Box::into_raw(Box::new(tx));
 
         let mut raw: DNSServiceRef = null_mut();
@@ -192,69 +189,30 @@ pub fn register_service(service: DNSServiceBuilder) -> Result<RegisteredDnsServi
             ptr::null(),
             ptr::null(),
             service.port.to_be(),
-            0,
-            ptr::null_mut(),
+            txt_len,
+            txt_record,
             Some(register_reply),
             tx as _,
         );
         if result == kDNSServiceErr_NoError {
             // process callback
-            let service = RegisteredDnsService { raw };
-            let r = service.process_result();
-            if r == kDNSServiceErr_NoError {
-                match rx.recv_timeout(CALLBACK_TIMEOUT) {
-                    Ok(Ok(reply)) => Ok(RegisteredDnsService { raw }),
-                    Ok(Err(e)) => Err(e),
-                    Err(e) => {
-                        error!("Error waiting for callback: {:?}", e);
-                        Err(RegistrationError::ServiceError(0))
-                    }
+            let socket = DNSServiceRefSockFD(raw);
+            let service = RegisteredDnsService { socket };
+            let raw_service = ServiceRef::new(raw, tx as _);
+
+            // spin a thread that keeps the registration working
+            run_thread(raw_service);
+
+            match rx.recv_timeout(CALLBACK_TIMEOUT) {
+                Ok(Ok(_reply)) => Ok(service),
+                Ok(Err(e)) => Err(e),
+                Err(e) => {
+                    error!("Error waiting for callback: {:?}", e);
+                    Err(RegistrationError::ServiceError(0))
                 }
-            } else {
-                Err(RegistrationError::ServiceError(r))
             }
         } else {
             Err(RegistrationError::ServiceError(result))
         }
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn registration_with_name() {
-        use std::sync::mpsc::channel;
-        use std::time::Duration;
-        let (tx, rx) = channel::<bool>();
-        let builder = DNSServiceBuilder::new("_http._tcp", 5222);
-        let mut service = builder.with_name("MyRustService").register().unwrap();
-        // let reg_result = service.register(move |reply| {
-        //     assert!(reply.is_ok());
-        //     let reply = reply.unwrap();
-        //     assert_eq!(reply.regtype, "_http._tcp.");
-        //     assert_eq!(reply.name, "MyRustService");
-        //     assert_eq!(reply.domain, "local.");
-        //     tx.send(true).unwrap();
-        // });
-        // should have a raw pointer & register result should be Ok
-        assert_ne!(service.raw.is_null(), true);
-        // assert_eq!(reg_result.is_ok(), true);
-        // This should block until we get a reply, and return no error once it does
-        // let result = service.process_result();
-        // assert_eq!(result, kDNSServiceErr_NoError);
-        // ensure we get the reply (we saw it failing on linux)
-        // let d = Duration::from_millis(500);
-        // let reply_happened = rx.recv_timeout(d).unwrap();
-        // assert_eq!(reply_happened, true);
-        // should have a valid socket
-        // let socket = service.socket();
-        // assert_ne!(socket, -1);
-    }
-
-    // #[test]
-    // fn registration_with_txt() {
-    //     let txt = TXTRecord::new();
-    // }
 }
