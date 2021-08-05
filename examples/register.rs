@@ -16,6 +16,7 @@ fn main() {
     {
         match service {
             Ok(service) => {
+                println!("Registered... waiting 20s");
                 sleep(Duration::from_secs(20));
                 println!("Dropping... {:?}", service);
             }
@@ -24,7 +25,8 @@ fn main() {
             }
         }
     }
-
+    log::info!("Drop should have happened");
+    sleep(Duration::from_secs(5));
     // let mut service = DNSServiceBuilder::new("_http._tcp")
     //     .with_port(2048)
     //     .with_name("MyRustService")

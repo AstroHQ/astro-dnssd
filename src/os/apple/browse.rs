@@ -89,7 +89,7 @@ unsafe extern "C" fn browse_callback(
         };
         match process() {
             Ok((name, regtype, domain)) => {
-                let mut service = DiscoveredService {
+                let service = DiscoveredService {
                     name,
                     regtype,
                     interface_index,
