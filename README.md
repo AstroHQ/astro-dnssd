@@ -14,25 +14,19 @@ Minimal but friendly safe wrapper around dns-sd(Bonjour, mDNS, Zeroconf DNS) API
 ### Complete
 
 - Service registration
-- TXTRecord support for service registration
-
-### In Progress
-
+- TXTRecord support for service registration via HashMap
 - Service browsing
 
 ### Todo
 
-- How to check for more (select() on socket, but has to be win32 friendly)
 - Record creation
 - Name resolution
 - Port map
 - Tests
 - Documentation
-- Pure Rust TXT code?
-- Interior mutability? (Can we reduce the &mut arguments some?)
 
 ## Build Requirements
-`astro-dnssd` requires the Bonjour SDK.
+`astro-dnssd` requires the Bonjour SDK (as of 0.3 on windows, it's optional, see win-bonjour feature flag)
 
 - **Windows:** Download the SDK [here]( https://developer.apple.com/bonjour/)
 - **Linux:** Install `avahi-compat-libdns_sd` for your distro of choice.
@@ -43,23 +37,34 @@ This [website](http://www.dns-sd.org/) provides a good overview of the DNS-SD pr
 ## Example
 
 ```rust
-    use astro_dnssd::register::DNSServiceBuilder;
-    use astro_dnssd::txt::TXTRecord;
-    let mut txt = TXTRecord::new();
-    let _ = txt.insert("s", Some("open"));
-    let mut service = DNSServiceBuilder::new("_rust._tcp")
-        .with_port(2048)
-        .with_name("MyRustService")
-        .with_txt_record(txt)
-        .build()
-        .unwrap();
-    let _result = service.register(|reply| match reply {
-        Ok(reply) => println!("Successful reply: {:?}", reply),
-        Err(e) => println!("Error registering: {:?}", e),
-    });
-    loop {
-        service.process_result();
+use astro_dnssd::DNSServiceBuilder;
+use env_logger::Env;
+use std::thread::sleep;
+use std::time::Duration;
+
+fn main() {
+    env_logger::from_env(Env::default().default_filter_or("trace")).init();
+    println!("Registering service...");
+    let service = DNSServiceBuilder::new("_http._tcp", 8080)
+        .with_key_value("status".into(), "open".into())
+        .register();
+
+    {
+        match service {
+            Ok(service) => {
+                println!("Registered... waiting 20s");
+                sleep(Duration::from_secs(20));
+                println!("Dropping... {:?}", service);
+            }
+            Err(e) => {
+                println!("Error registering: {:?}", e);
+            }
+        }
     }
+    log::info!("Drop should have happened");
+    sleep(Duration::from_secs(5));
+}
+
 ```
 
 ## License
