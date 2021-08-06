@@ -38,6 +38,9 @@ pub enum BrowseError {
     /// IO error
     #[error("IO Error: {0}")]
     IoError(#[from] IoError),
+    /// Timeout error when waiting for more data from browser
+    #[error("Timeout waiting for more data")]
+    Timeout,
 }
 /// Apple based DNS-SD result type
 pub type Result<T, E = BrowseError> = std::result::Result<T, E>;
@@ -269,9 +272,7 @@ impl ServiceBrowser {
 
         match self.rx.recv_timeout(timeout) {
             Ok(service_result) => service_result,
-            Err(RecvTimeoutError::Timeout) => {
-                Err(BrowseError::IoError(IoError::from(ErrorKind::TimedOut)))
-            }
+            Err(RecvTimeoutError::Timeout) => Err(BrowseError::Timeout),
             Err(RecvTimeoutError::Disconnected) => Err(BrowseError::IoError(IoError::from(
                 ErrorKind::ConnectionReset,
             ))),
