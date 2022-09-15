@@ -1,7 +1,5 @@
 pub use crate::os::{BrowseError, ServiceBrowser};
 use std::collections::HashMap;
-// use std::io::Error as IoError;
-// use thiserror::Error;
 
 /// Service browsing result type
 pub type Result<T, E = BrowseError> = std::result::Result<T, E>;
@@ -11,7 +9,7 @@ pub trait ServiceBrowserTrait {
 }
 
 /// Type of service event from browser, if a service is being added or removed from network
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ServiceEventType {
     /// Service has been added to the network
     Added,
