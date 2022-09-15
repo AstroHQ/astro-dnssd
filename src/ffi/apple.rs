@@ -8,7 +8,7 @@
 pub const kDNSServiceMaxServiceName: u32 = 64;
 pub const kDNSServiceMaxDomainName: u32 = 1009;
 pub const kDNSServiceInterfaceIndexAny: u32 = 0;
-pub const kDNSServiceProperty_DaemonVersion: &'static [u8; 14usize] = b"DaemonVersion\0";
+pub const kDNSServiceProperty_DaemonVersion: &[u8; 14usize] = b"DaemonVersion\0";
 pub type dnssd_sock_t = ::std::os::raw::c_int;
 pub type dispatch_queue_t = *mut dispatch_queue_s;
 #[repr(C)]

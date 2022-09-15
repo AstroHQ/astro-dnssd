@@ -129,7 +129,7 @@ impl Drop for ServiceRef {
             if !self.raw.is_null() {
                 trace!("Deallocating DNSServiceRef");
                 DNSServiceRefDeallocate(self.raw);
-                self.raw = std::ptr::null_mut();
+                self.raw = null_mut();
                 Box::from_raw(self.context);
             }
         }
@@ -170,7 +170,7 @@ pub fn register_service(service: DNSServiceBuilder) -> Result<RegisteredDnsServi
         let c_name = c_name.as_ref();
         let service_type =
             CString::new(service.regtype.as_str()).map_err(|_| RegistrationError::InvalidString)?;
-        let txt = service.txt.and_then(|h| Some(TXTRecord::from(h)));
+        let txt = service.txt.map(TXTRecord::from);
         let (txt_record, txt_len) = match &txt {
             Some(txt) => (txt.raw_bytes_ptr(), txt.raw_bytes_len()),
             None => (ptr::null(), 0),
@@ -184,7 +184,7 @@ pub fn register_service(service: DNSServiceBuilder) -> Result<RegisteredDnsServi
             &mut raw,
             0,
             0,
-            c_name.map_or(ptr::null_mut(), |c| c.as_ptr()),
+            c_name.map_or(null_mut(), |c| c.as_ptr()),
             service_type.as_ptr(),
             ptr::null(),
             ptr::null(),

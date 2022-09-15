@@ -60,7 +60,7 @@ mod os {
                 std::ptr::null_mut(),
                 &mut timeout,
             );
-            Ok(libc::FD_ISSET(fd, &mut read_set))
+            Ok(libc::FD_ISSET(fd, &read_set))
         }
     }
 }
