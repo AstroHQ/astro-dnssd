@@ -250,7 +250,7 @@ impl ServiceBrowser {
                 Some(browse_callback),
                 tx as _,
             );
-            if r != ffi::kDNSServiceErr_NoError {
+            if r != kDNSServiceErr_NoError {
                 error!("DNSServiceBrowser error: {}", r);
                 return Err(BrowseError::ServiceError(r));
             }
@@ -265,7 +265,7 @@ impl ServiceBrowser {
         if self.has_data(timeout)? {
             trace!("Data on socket, processing before checking channel");
             let r = self.process_result();
-            if r != ffi::kDNSServiceErr_NoError {
+            if r != kDNSServiceErr_NoError {
                 return Err(BrowseError::ServiceError(r));
             }
         }
@@ -292,7 +292,7 @@ impl Drop for ServiceBrowser {
 unsafe impl Send for ServiceBrowser {}
 
 pub fn browse(builder: ServiceBrowserBuilder) -> Result<ServiceBrowser> {
-    Ok(ServiceBrowser::start(builder.regtype, builder.domain)?)
+    ServiceBrowser::start(builder.regtype, builder.domain)
 }
 macro_rules! mut_void_ptr {
     ($var:expr) => {
@@ -321,6 +321,7 @@ impl DiscoveredService {
             if r != kDNSServiceErr_NoError {
                 return Err(BrowseError::ServiceError(r));
             }
+            #[allow(clippy::while_immutable_condition)]
             while pending_resolution.more_coming {
                 ffi::DNSServiceProcessResult(sdref);
             }
@@ -355,7 +356,6 @@ pub struct ResolvedService {
     pub port: u16,
     /// TXT record service has if any
     pub txt_record: Option<HashMap<String, String>>,
-    interface_index: u32,
 }
 impl ToSocketAddrs for ResolvedService {
     type Iter = std::vec::IntoIter<SocketAddr>;
@@ -368,7 +368,7 @@ impl ToSocketAddrs for ResolvedService {
 unsafe extern "C" fn resolve_callback(
     _sd_ref: ffi::DNSServiceRef,
     flags: ffi::DNSServiceFlags,
-    interface_index: u32,
+    _interface_index: u32,
     error_code: ffi::DNSServiceErrorType,
     full_name: *const c_char,
     host_target: *const c_char,
@@ -378,7 +378,7 @@ unsafe extern "C" fn resolve_callback(
     context: *mut c_void,
 ) {
     let context: &mut PendingResolution = &mut *(context as *mut PendingResolution);
-    if error_code != ffi::kDNSServiceErr_NoError {
+    if error_code != kDNSServiceErr_NoError {
         error!("Error resolving service: {}", error_code);
         context.more_coming = false;
         return;
@@ -399,7 +399,7 @@ unsafe extern "C" fn resolve_callback(
     let txt_record = if txt_len > 0 {
         let data = std::slice::from_raw_parts(txt_record, txt_len as usize);
         match hash_from_txt(data) {
-            Ok(hash) if hash.len() > 0 => Some(hash),
+            Ok(hash) if !hash.is_empty() => Some(hash),
             Ok(_hash) => None,
             Err(e) => {
                 error!("Failed to get TXT record: {:?}", e);
@@ -416,7 +416,6 @@ unsafe extern "C" fn resolve_callback(
                 hostname,
                 port: u16::from_be(port),
                 txt_record,
-                interface_index,
             };
             context.results.push(service);
         }
@@ -448,12 +447,12 @@ fn hash_from_txt(data: &[u8]) -> Result<HashMap<String, String>> {
                 &mut value_len,
                 &mut value,
             );
-            if err == ffi::kDNSServiceErr_NoError {
+            if err == kDNSServiceErr_NoError {
                 let c_str: &CStr = CStr::from_ptr(key.as_ptr());
                 let key: &str = c_str.to_str().unwrap();
                 let data = std::slice::from_raw_parts(value as *mut u8, value_len as _);
                 match std::str::from_utf8(data) {
-                    Ok(value) if key.len() > 0 && value.len() > 0 => {
+                    Ok(value) if !key.is_empty() && !value.is_empty() => {
                         hash.insert(key.to_owned(), value.to_owned());
                     }
                     Ok(_value) => {
