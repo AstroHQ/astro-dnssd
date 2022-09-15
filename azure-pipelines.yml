@@ -5,25 +5,24 @@ trigger:
 
 strategy:
   matrix:
-    # windows-stable:
-    #   imageName: 'vs2017-win2016'
-    #   rustup_toolchain: stable
+    windows-stable:
+      imageName: 'windows-latest'
+      rustup_toolchain: stable
     mac-stable:
-      imageName: 'macos-10.15'
+      imageName: 'macos-latest'
       rustup_toolchain: stable
     linux-stable:
-      imageName: 'ubuntu-18.04'
+      imageName: 'ubuntu-latest'
       rustup_toolchain: stable
 
 pool:
   vmImage: $(imageName)
 
 steps:
-  # TODO: figure out how we can automate installing Bonjour SDK
-  - script: |
-      choco install bonjour
-    displayName: Install Windows dependencies
-    condition: eq( variables['Agent.OS'], 'Windows_NT' )
+#  - script: |
+#      choco install bonjour
+#    displayName: Install Windows dependencies
+#    condition: eq( variables['Agent.OS'], 'Windows_NT' )
   - script: |
       curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain $RUSTUP_TOOLCHAIN
       echo "##vso[task.setvariable variable=PATH;]$PATH:$HOME/.cargo/bin"
