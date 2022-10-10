@@ -163,12 +163,9 @@ fn resolver_thread(rx: Receiver<Result<DiscoveredService>>, tx: SyncSender<Resul
                         Ok(resolved) => {
                             trace!("Resolved: {:?}", resolved);
                             let service = service_from_resolved(service, resolved);
-                            match tx.send(Ok(service)) {
-                                Ok(_) => {}
-                                Err(_e) => {
-                                    error!("Error sending resolved service, disconnected channel, exiting thread");
-                                    break;
-                                }
+                            if let Err(_e) = tx.send(Ok(service)) {
+                                error!("Error sending resolved service, disconnected channel, exiting thread");
+                                break;
                             }
                         }
                         Err(e) => {
@@ -188,7 +185,7 @@ fn resolver_thread(rx: Receiver<Result<DiscoveredService>>, tx: SyncSender<Resul
                 }
                 Err(RecvTimeoutError::Timeout) => {}
                 Err(RecvTimeoutError::Disconnected) => {
-                    error!("Resolver channel disconnected, exiting thread");
+                    warn!("Resolver channel disconnected, exiting thread as we're likely stopped/dropped");
                     break;
                 }
             }
@@ -197,12 +194,12 @@ fn resolver_thread(rx: Receiver<Result<DiscoveredService>>, tx: SyncSender<Resul
 
 /// Main service browser, calls callback upon discovery of service
 pub struct ServiceBrowser {
-    // /// Type to search for, i.e. ._http._tcp.
-    // pub regtype: String,
-    // /// Domain to search in, default is .local
-    // pub domain: Option<String>,
+    /// Raw DNS-SD service reference
     raw: ffi::DNSServiceRef,
+    /// Receiver to receive successfully discovered & resolved services from
     rx: Receiver<Result<Service>>,
+    /// Raw pointer the browse callback uses for the SyncSender, to use with Box::from_raw() during Drop
+    raw_tx: *mut SyncSender<Result<DiscoveredService>>,
 }
 
 impl ServiceBrowser {
@@ -256,7 +253,11 @@ impl ServiceBrowser {
             }
             let (final_tx, final_rx) = sync_channel::<Result<Service>>(10);
             resolver_thread(rx, final_tx);
-            Ok(ServiceBrowser { raw, rx: final_rx })
+            Ok(ServiceBrowser {
+                raw,
+                rx: final_rx,
+                raw_tx: tx,
+            })
         }
     }
     /// Returns discovered services if any
@@ -283,7 +284,10 @@ impl ServiceBrowser {
 impl Drop for ServiceBrowser {
     fn drop(&mut self) {
         unsafe {
+            // ensure we cancel browser first by deallocating it...
             ffi::DNSServiceRefDeallocate(self.raw);
+            // then we should be able to safely drop the sender which will signal resolver thread to exit
+            let _tx = Box::from_raw(self.raw_tx);
         }
     }
 }
