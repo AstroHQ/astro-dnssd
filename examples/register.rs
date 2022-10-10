@@ -5,7 +5,7 @@ use std::thread::sleep;
 use std::time::Duration;
 
 fn main() {
-    env_logger::from_env(Env::default().default_filter_or("trace")).init();
+    env_logger::Builder::from_env(Env::default().default_filter_or("trace")).init();
     println!("Registering service...");
     let service = DNSServiceBuilder::new("_http._tcp", 8080)
         .with_key_value("status".into(), "open".into())
