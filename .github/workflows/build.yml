@@ -7,24 +7,20 @@ jobs:
   build:
     strategy:
       matrix:
-        os: ["macOS", "Windows"]
-    runs-on: [self-hosted, '${{ matrix.os }}']
+        os: ["macos-latest", "windows-latest", "ubuntu-latest"]
+    runs-on: '${{ matrix.os }}'
     name: ${{ matrix.os }}
     steps:
-      - name: Setup git credentials
-        uses: de-vri-es/setup-git-credentials@v2
-        with:
-          credentials: https://astrohq-bot:${{ secrets.ASTROBOT_TOKEN }}@github.com
       - name: Checkout
         uses: actions/checkout@v3
-        with:
-          submodules: recursive
-          token: ${{ secrets.ASTROBOT_TOKEN }}
+      - name: Linux deps
+        run: sudo apt install -y libavahi-compat-libdnssd-dev libavahi-compat-libdnssd1
+        if: ${{ matrix.os == 'ubuntu-latest' }}
       - name: Build
         run: cargo build --all --all-features
       - name: Build for iOS
         run: cargo build --workspace --all-features --target aarch64-apple-ios
-        if: ${{ matrix.os == 'macOS' }}
+        if: ${{ matrix.os == 'macos-latest' }}
       - name: Run Clippy
         uses: actions-rs/clippy-check@v1
         with:
