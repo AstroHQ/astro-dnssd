@@ -16,6 +16,8 @@ jobs:
       - name: Linux deps
         run: sudo apt install -y libavahi-compat-libdnssd-dev libavahi-compat-libdnssd1
         if: ${{ matrix.os == 'ubuntu-latest' }}
+      - name: iOS Rust target
+        run: rustup target add aarch64-apple-ios
       - name: Build
         run: cargo build --all --all-features
       - name: Build for iOS
