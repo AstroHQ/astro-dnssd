@@ -130,7 +130,7 @@ impl Drop for ServiceRef {
                 trace!("Deallocating DNSServiceRef");
                 DNSServiceRefDeallocate(self.raw);
                 self.raw = null_mut();
-                Box::from_raw(self.context);
+                _ = Box::from_raw(self.context);
             }
         }
     }
