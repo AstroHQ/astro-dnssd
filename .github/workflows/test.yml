@@ -1,0 +1,24 @@
+name: Cargo Test
+
+on:
+  workflow_call:
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: ["macOS", "Windows"]
+    runs-on: [self-hosted, '${{ matrix.os }}']
+    name: ${{ matrix.os }}
+    steps:
+      - name: Setup git credentials
+        uses: de-vri-es/setup-git-credentials@v2
+        with:
+          credentials: https://astrohq-bot:${{ secrets.ASTROBOT_TOKEN }}@github.com
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+          token: ${{ secrets.ASTROBOT_TOKEN }}
+      - name: Test
+        run: cargo test --all

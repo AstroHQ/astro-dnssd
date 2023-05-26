@@ -1,7 +1,5 @@
-trigger:
-- master
-- develop
-- release/*
+trigger: none
+pr: none
 
 strategy:
   matrix:
