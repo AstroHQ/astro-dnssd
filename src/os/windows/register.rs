@@ -124,7 +124,7 @@ impl fmt::Debug for RegisteredDnsService {
 impl RegisteredDnsService {
     fn free_context(&mut self) {
         if !self.request.pQueryContext.is_null() {
-            unsafe { Box::from_raw(self.request.pQueryContext) };
+            _ = unsafe { Box::from_raw(self.request.pQueryContext as *mut SyncSender<u32>) };
             self.request.pQueryContext = null_mut();
         }
     }

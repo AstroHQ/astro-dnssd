@@ -45,7 +45,7 @@ enum DnsRecord {
 
 fn process_name(name: &str) -> Option<(String, String, String)> {
     // split doesn't do reverse so collect then reverse...
-    let mut split = name.split(".").collect::<Vec<&str>>().into_iter().rev();
+    let mut split = name.split('.').collect::<Vec<&str>>().into_iter().rev();
     let domain = split.next()?;
     let ip_protocol = split.next()?;
     let protocol = split.next()?;
@@ -67,20 +67,19 @@ fn services_from_record_list(start_record: PDNS_RECORD) -> Result<Service> {
     let mut current_record = start_record;
     while !current_record.is_null() {
         match DnsRecord::try_from(current_record) {
-            Ok(DnsRecord::Ptr(name)) => match process_name(&name) {
-                Some((name, regtype, domain)) => {
+            Ok(DnsRecord::Ptr(name)) => {
+                if let Some((name, regtype, domain)) = process_name(&name) {
                     service.name = name;
                     service.regtype = regtype;
                     service.domain = domain;
                 }
-                None => {}
-            },
+            }
             Ok(DnsRecord::Srv { port, hostname }) => {
                 service.port = port;
                 service.hostname = hostname;
             }
             Ok(DnsRecord::Txt(hash)) => {
-                if hash.len() > 0 {
+                if !hash.is_empty() {
                     service.txt_record = Some(hash);
                 }
             }
@@ -131,7 +130,7 @@ impl TryFrom<PDNS_RECORD> for DnsRecord {
                 for str_ptr in strings {
                     match U16CStr::from_ptr_str(*str_ptr).to_string() {
                         Ok(s) => {
-                            let mut split = s.split("=");
+                            let mut split = s.split('=');
                             match (split.next(), split.next()) {
                                 (Some(k), Some(v)) => {
                                     hash.insert(k.to_string(), v.to_string());
@@ -218,7 +217,7 @@ impl Drop for ServiceBrowser {
 impl ServiceBrowser {
     fn free_context(&mut self) {
         if !self.context.is_null() {
-            unsafe { Box::from_raw(self.context) };
+            _ = unsafe { Box::from_raw(self.context) };
             self.context = null_mut();
         }
     }
