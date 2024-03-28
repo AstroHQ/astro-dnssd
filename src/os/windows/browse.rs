@@ -37,7 +37,7 @@ pub enum BrowseError {
 }
 enum DnsRecord {
     Ptr(String),
-    Srv(u16),
+    Srv { port: u16, hostname: String },
     Txt(HashMap<String, String>),
     A(Ipv4Addr),
     Aaaa(Ipv6Addr),
@@ -69,14 +69,16 @@ fn services_from_record_list(start_record: PDNS_RECORD) -> Result<Service> {
         match DnsRecord::try_from(current_record) {
             Ok(DnsRecord::Ptr(name)) => match process_name(&name) {
                 Some((name, regtype, domain)) => {
-                    service.hostname = format!("{}.{}", name, domain);
                     service.name = name;
                     service.regtype = regtype;
                     service.domain = domain;
                 }
                 None => {}
             },
-            Ok(DnsRecord::Srv(port)) => service.port = port,
+            Ok(DnsRecord::Srv { port, hostname }) => {
+                service.port = port;
+                service.hostname = hostname;
+            }
             Ok(DnsRecord::Txt(hash)) => {
                 if hash.len() > 0 {
                     service.txt_record = Some(hash);
@@ -115,8 +117,10 @@ impl TryFrom<PDNS_RECORD> for DnsRecord {
             DNS_TYPE_SRV => unsafe {
                 let data = (*record).Data.Srv;
                 let port = data.wPort;
-                trace!("Port: {}", port);
-                Ok(DnsRecord::Srv(port))
+                let hostname = U16CString::from_ptr_str(data.pNameTarget).to_string_lossy();
+                trace!("SRV Port: {}", port);
+                trace!("SRV Target: {hostname}");
+                Ok(DnsRecord::Srv { port, hostname })
             },
             DNS_TYPE_TEXT => unsafe {
                 let strings = std::slice::from_raw_parts(
