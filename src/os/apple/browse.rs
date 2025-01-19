@@ -435,10 +435,10 @@ fn hash_from_txt(data: &[u8]) -> Result<HashMap<String, String>> {
     let txt_bytes = slice.as_ptr() as *const c_void;
 
     unsafe {
+        // SAFETY: generated txt_bytes from rust slice with guarantees
         let total_keys = ffi::TXTRecordGetCount(txt_len, txt_bytes);
         let mut hash: HashMap<String, String> = HashMap::with_capacity(total_keys as _);
         for i in 0..total_keys {
-            // index is u16 so we can't go over u16::max_value() but likely will end before that
             let mut key: [c_char; 256] = std::mem::zeroed();
             let mut value = std::mem::zeroed();
             let mut value_len: u8 = 0;
@@ -454,16 +454,29 @@ fn hash_from_txt(data: &[u8]) -> Result<HashMap<String, String>> {
             if err == kDNSServiceErr_NoError {
                 let c_str: &CStr = CStr::from_ptr(key.as_ptr());
                 let key: &str = c_str.to_str().unwrap();
-                let data = std::slice::from_raw_parts(value as *mut u8, value_len as _);
-                match std::str::from_utf8(data) {
-                    Ok(value) if !key.is_empty() && !value.is_empty() => {
-                        hash.insert(key.to_owned(), value.to_owned());
+                // From the API documentation
+                // For keys with no value, *value is set to NULL and *valueLen is zero.
+                if value.is_null() {
+                    if !key.is_empty() {
+                        // use html notion of key==value for key only term to be able to represent
+                        // it in the hashmap without having to change the API
+                        hash.insert(key.to_owned(), key.to_owned());
+                    } else {
+                        trace!("Discarding TXT key with empty key & null value");
                     }
-                    Ok(_value) => {
-                        trace!("Discarding TXT key with empty key & value");
-                    }
-                    Err(e) => {
-                        error!("Error processing TXT value as UTF-8: {}", e);
+                } else {
+                    // SAFETY: guarding against null value above, otherwise trusting the C API
+                    let data = std::slice::from_raw_parts(value as *mut u8, value_len as _);
+                    match std::str::from_utf8(data) {
+                        Ok(value) if !key.is_empty() && !value.is_empty() => {
+                            hash.insert(key.to_owned(), value.to_owned());
+                        }
+                        Ok(_value) => {
+                            trace!("Discarding TXT key with empty key & value");
+                        }
+                        Err(e) => {
+                            error!("Error processing TXT value as UTF-8: {}", e);
+                        }
                     }
                 }
             }
