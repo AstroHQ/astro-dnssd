@@ -4,10 +4,6 @@ use std::collections::HashMap;
 /// Service browsing result type
 pub type Result<T, E = BrowseError> = std::result::Result<T, E>;
 
-pub trait ServiceBrowserTrait {
-    fn next_entry(&self) -> Result<Service>;
-}
-
 /// Type of service event from browser, if a service is being added or removed from network
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ServiceEventType {

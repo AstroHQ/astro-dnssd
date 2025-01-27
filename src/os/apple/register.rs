@@ -102,6 +102,7 @@ impl fmt::Debug for RegisteredDnsService {
 
 /// Reply information upon successful registration
 #[derive(Debug)]
+#[allow(dead_code)] // TODO: in future look to see if we should use these values?
 pub struct DNSServiceRegisterReply {
     /// Service type of successfully registered service
     pub regtype: String,

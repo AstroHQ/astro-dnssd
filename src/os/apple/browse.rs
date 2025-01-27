@@ -353,6 +353,7 @@ impl Default for PendingResolution {
 #[derive(Debug)]
 pub struct ResolvedService {
     /// Full name of service
+    #[allow(dead_code)] // TODO: check if we should expose this to public API?
     pub full_name: String,
     /// Hostname of service, usable with gethostbyname()
     pub hostname: String,
