@@ -2,8 +2,7 @@
     non_upper_case_globals,
     non_camel_case_types,
     non_snake_case,
-    dead_code,
-    deref_nullptr
+    dead_code
 )]
 
 pub const kDNSServiceMaxServiceName: u32 = 64;
@@ -466,28 +465,6 @@ fn bindgen_test_layout__TXTRecordRef_t() {
         ::std::mem::align_of::<_TXTRecordRef_t>(),
         8usize,
         concat!("Alignment of ", stringify!(_TXTRecordRef_t))
-    );
-    assert_eq!(
-        unsafe { &(*(::std::ptr::null::<_TXTRecordRef_t>())).PrivateData as *const _ as usize },
-        0usize,
-        concat!(
-            "Offset of field: ",
-            stringify!(_TXTRecordRef_t),
-            "::",
-            stringify!(PrivateData)
-        )
-    );
-    assert_eq!(
-        unsafe {
-            &(*(::std::ptr::null::<_TXTRecordRef_t>())).ForceNaturalAlignment as *const _ as usize
-        },
-        0usize,
-        concat!(
-            "Offset of field: ",
-            stringify!(_TXTRecordRef_t),
-            "::",
-            stringify!(ForceNaturalAlignment)
-        )
     );
 }
 pub type TXTRecordRef = _TXTRecordRef_t;
