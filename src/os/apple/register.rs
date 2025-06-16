@@ -152,7 +152,7 @@ impl RegisteredDnsService {}
 impl Drop for RegisteredDnsService {
     fn drop(&mut self) {
         trace!("Signaling thread to exit...");
-        self.shutdown_flag.store(true, Ordering::Release);
+        self.shutdown_flag.store(true, Ordering::Relaxed);
     }
 }
 fn run_thread_with_poll(service: ServiceRef, shutdown_flag: Arc<AtomicBool>) {
@@ -161,7 +161,7 @@ fn run_thread_with_poll(service: ServiceRef, shutdown_flag: Arc<AtomicBool>) {
     std::thread::spawn(move || {
         loop {
             // Check a shutdown flag
-            if shutdown_flag.load(Ordering::Acquire) {
+            if shutdown_flag.load(Ordering::Relaxed) {
                 trace!("Shutdown requested, exiting DNS-SD processing thread");
                 break;
             }
