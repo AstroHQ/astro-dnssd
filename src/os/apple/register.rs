@@ -1,19 +1,28 @@
 //! Registration of dns-sd services
 
 // use super::txt::TXTRecord;
-use crate::ffi::apple::{
-    kDNSServiceErr_NoError, DNSServiceErrorType, DNSServiceFlags, DNSServiceProcessResult,
-    DNSServiceRef, DNSServiceRefDeallocate, DNSServiceRefSockFD, DNSServiceRegister,
+use crate::{
+    ffi::apple::{
+        kDNSServiceErr_NoError, kDNSServiceErr_ServiceNotRunning, DNSServiceErrorType,
+        DNSServiceFlags, DNSServiceProcessResult, DNSServiceRef, DNSServiceRefDeallocate,
+        DNSServiceRefSockFD, DNSServiceRegister,
+    },
+    os::apple::txt::TXTRecord,
+    register::Result,
+    DNSServiceBuilder,
 };
-use crate::os::apple::txt::TXTRecord;
-use crate::{register::Result, DNSServiceBuilder};
-use std::ffi::{c_void, CStr, CString};
-use std::fmt;
-use std::os::raw::c_char;
-use std::ptr;
-use std::ptr::null_mut;
-use std::sync::mpsc::{sync_channel, SyncSender};
-use std::time::Duration;
+use std::{
+    ffi::{c_void, CStr, CString},
+    fmt,
+    os::raw::c_char,
+    ptr::{null, null_mut},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc::{sync_channel, SyncSender},
+        Arc,
+    },
+    time::Duration,
+};
 use thiserror::Error;
 
 const CALLBACK_TIMEOUT: Duration = Duration::from_secs(10);
@@ -92,11 +101,11 @@ unsafe extern "C" fn register_reply(
 
 /// DNS-SD Service for registration use
 pub struct RegisteredDnsService {
-    socket: i32,
+    shutdown_flag: Arc<AtomicBool>,
 }
 impl fmt::Debug for RegisteredDnsService {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "RegisteredDnsService {{ socket: {} }}", self.socket)
+        write!(f, "RegisteredDnsService")
     }
 }
 
@@ -139,27 +148,84 @@ impl Drop for ServiceRef {
 
 impl RegisteredDnsService {}
 
-// In order to signal the blocked thread, we close its socket to unblock it
+// Signal the background thread via an atomic flag
 impl Drop for RegisteredDnsService {
     fn drop(&mut self) {
-        unsafe {
-            trace!("Closing socket to signal service cleanup...");
-            libc::close(self.socket);
-        }
+        trace!("Signaling thread to exit...");
+        self.shutdown_flag.store(true, Ordering::Release);
     }
 }
-fn run_thread(service: ServiceRef) {
-    std::thread::spawn(move || loop {
-        unsafe {
-            trace!("Processing...");
-            let r = DNSServiceProcessResult(service.raw);
-            if r != kDNSServiceErr_NoError {
-                error!("Error processing: {}, exiting thread", r);
+fn run_thread_with_poll(service: ServiceRef, shutdown_flag: Arc<AtomicBool>) {
+    let socket = unsafe { DNSServiceRefSockFD(service.raw) };
+
+    std::thread::spawn(move || {
+        loop {
+            // Check a shutdown flag
+            if shutdown_flag.load(Ordering::Acquire) {
+                trace!("Shutdown requested, exiting DNS-SD processing thread");
                 break;
             }
+
+            unsafe {
+                let mut poll_fd = libc::pollfd {
+                    fd: socket,
+                    events: libc::POLLIN,
+                    revents: 0,
+                };
+
+                // 100 ms timeout
+                let result = libc::poll(&mut poll_fd, 1, 100);
+
+                match result {
+                    -1 => {
+                        let errno = *libc::__error();
+                        if errno == libc::EINTR {
+                            continue;
+                        } else if errno == libc::EBADF {
+                            trace!("DNS-SD socket closed, exiting thread");
+                            break;
+                        } else {
+                            error!("poll() error: {}, exiting thread", errno);
+                            break;
+                        }
+                    }
+                    0 => {
+                        // Timeout - continue to check the shutdown flag
+                        continue;
+                    }
+                    _ => {
+                        // Check what events occurred
+                        if poll_fd.revents & libc::POLLIN != 0 {
+                            // Data ready to read
+                            trace!("Processing DNS-SD result...");
+                            let r = DNSServiceProcessResult(service.raw);
+                            if r != kDNSServiceErr_NoError {
+                                if r == kDNSServiceErr_ServiceNotRunning {
+                                    trace!("DNS-SD service stopped, exiting thread");
+                                } else {
+                                    error!("Error processing DNS-SD result: {}, exiting thread", r);
+                                }
+                                break;
+                            }
+                        } else if poll_fd.revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL)
+                            != 0
+                        {
+                            // Socket error or hangup
+                            trace!(
+                                "DNS-SD socket error/hangup (revents: {}), exiting thread",
+                                poll_fd.revents
+                            );
+                            break;
+                        }
+                    }
+                }
+            }
         }
+
+        trace!("DNS-SD processing thread exited");
     });
 }
+
 pub fn register_service(service: DNSServiceBuilder) -> Result<RegisteredDnsService> {
     unsafe {
         let c_name: Option<CString>;
@@ -174,7 +240,7 @@ pub fn register_service(service: DNSServiceBuilder) -> Result<RegisteredDnsServi
         let txt = service.txt.map(TXTRecord::from);
         let (txt_record, txt_len) = match &txt {
             Some(txt) => (txt.raw_bytes_ptr(), txt.raw_bytes_len()),
-            None => (ptr::null(), 0),
+            None => (null(), 0),
         };
 
         let (tx, rx) = sync_channel::<Result<DNSServiceRegisterReply>>(4);
@@ -187,8 +253,8 @@ pub fn register_service(service: DNSServiceBuilder) -> Result<RegisteredDnsServi
             0,
             c_name.map_or(null_mut(), |c| c.as_ptr()),
             service_type.as_ptr(),
-            ptr::null(),
-            ptr::null(),
+            null(),
+            null(),
             service.port.to_be(),
             txt_len,
             txt_record,
@@ -197,12 +263,13 @@ pub fn register_service(service: DNSServiceBuilder) -> Result<RegisteredDnsServi
         );
         if result == kDNSServiceErr_NoError {
             // process callback
-            let socket = DNSServiceRefSockFD(raw);
-            let service = RegisteredDnsService { socket };
+            let shutdown_flag = Arc::new(AtomicBool::new(false));
             let raw_service = ServiceRef::new(raw, tx as _);
 
             // spin a thread that keeps the registration working
-            run_thread(raw_service);
+            run_thread_with_poll(raw_service, shutdown_flag.clone());
+
+            let service = RegisteredDnsService { shutdown_flag };
 
             match rx.recv_timeout(CALLBACK_TIMEOUT) {
                 Ok(Ok(_reply)) => Ok(service),
