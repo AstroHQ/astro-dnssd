@@ -2,7 +2,8 @@
     non_upper_case_globals,
     non_camel_case_types,
     non_snake_case,
-    dead_code
+    dead_code,
+    deref_nullptr
 )]
 
 pub const kDNSServiceMaxServiceName: u32 = 64;

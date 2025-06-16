@@ -1,6 +1,6 @@
 [package]
 name = "astro-dnssd"
-version = "0.3.5"
+version = "0.3.6"
 authors = ["Jeremy Knope <jeremy@astropad.com>"]
 description = "Simple & safe DNS-SD wrapper"
 keywords = ["dns-sd", "dnssd", "bonjour", "zeroconf", "mdns"]
@@ -12,7 +12,7 @@ edition = "2018"
 
 [dependencies]
 log = "0.4.8"
-thiserror = "1.0.20"
+thiserror = "2.0.12"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { version = "0.3", features = ["winsock2"] }
