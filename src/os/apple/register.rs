@@ -178,7 +178,8 @@ fn run_thread_with_poll(service: ServiceRef, shutdown_flag: Arc<AtomicBool>) {
 
                 match result {
                     -1 => {
-                        let errno = *libc::__error();
+                        // Portable errno retrieval
+                        let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
                         if errno == libc::EINTR {
                             continue;
                         } else if errno == libc::EBADF {
