@@ -16,7 +16,10 @@ fn cfg_os_is(family: &str) -> bool {
 fn find_avahi_compat_dns_sd() {
     // on unix but not darwin link avahi compat
     if cfg_family_is("unix") && !(cfg_os_is("macos") || cfg_os_is("ios")) {
-        pkg_config::probe_library("avahi-compat-libdns_sd").unwrap();
+        if let Err(_) = pkg_config::probe_library("avahi-compat-libdns_sd") {
+            println!("cargo:warning=avahi-compat-libdns_sd not found via pkg-config, will just link against libdns_sd");
+            println!("cargo:rustc-link-lib=dns_sd");
+        }
     }
 }
 
