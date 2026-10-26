@@ -43,7 +43,9 @@ pub struct Service {
 impl Service {
     /// Looks up the service host's addresses through mDNSResponder on the interface the service resolved on, including
     /// peer-to-peer interfaces such as AWDL, which `getaddrinfo` doesn't search. IPv6 link-local addresses come back
-    /// scoped to their interface. Returns the first batch of answers, waiting up to `timeout` for it
+    /// scoped to their interface. Returns the first batch of answers, waiting up to `timeout` for it. A host with only
+    /// IPv4 or only IPv6 addresses is fine. Fails with `kDNSServiceErr_NoSuchRecord` if both are reported missing, or
+    /// times out if nothing answers
     pub fn resolve_socket_addrs(&self, timeout: Duration) -> Result<Vec<SocketAddr>> {
         crate::os::resolve_socket_addrs(
             &self.hostname,
