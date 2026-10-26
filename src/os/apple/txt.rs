@@ -54,7 +54,7 @@ impl TXTRecord {
     {
         let value = value.as_ref().map(|x| x.as_ref());
         let key = CString::new(key).or(Err(RegistrationError::InvalidString))?;
-        let value_size = value.map_or(0, |x| x.len().min(u8::max_value() as usize) as u8);
+        let value_size = value.map_or(0, |x| x.len().min(u8::MAX as usize) as u8);
         let result = unsafe {
             TXTRecordSetValue(
                 &mut self.raw,
