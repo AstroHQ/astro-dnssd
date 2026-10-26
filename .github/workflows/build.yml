@@ -12,7 +12,7 @@ jobs:
     name: ${{ matrix.os }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
       - name: Linux deps
         run: sudo apt install -y libavahi-compat-libdnssd-dev libavahi-compat-libdnssd1
         if: ${{ matrix.os == 'ubuntu-latest' }}
@@ -24,6 +24,4 @@ jobs:
         run: cargo build --workspace --all-features --target aarch64-apple-ios
         if: ${{ matrix.os == 'macos-latest' }}
       - name: Run Clippy
-        uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+        run: cargo clippy --all --all-targets
