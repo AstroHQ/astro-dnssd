@@ -40,6 +40,8 @@ pub struct Service {
 pub struct ServiceBrowserBuilder {
     pub(crate) regtype: String,
     pub(crate) domain: Option<String>,
+    #[cfg(target_vendor = "apple")]
+    pub(crate) peer_to_peer: bool,
 }
 
 impl ServiceBrowserBuilder {
@@ -48,11 +50,23 @@ impl ServiceBrowserBuilder {
         ServiceBrowserBuilder {
             regtype: String::from(regtype),
             domain: None,
+            #[cfg(target_vendor = "apple")]
+            peer_to_peer: false,
         }
     }
     /// Adds a specified domain to browser's search
     pub fn with_domain(mut self, domain: &str) -> ServiceBrowserBuilder {
         self.domain = Some(String::from(domain));
+        self
+    }
+    /// Also browses over peer-to-peer interfaces such as AWDL, so services can be found
+    /// without both devices being on the same network. Off by default.
+    ///
+    /// Sets `kDNSServiceFlagsIncludeP2P | kDNSServiceFlagsIncludeAWDL`. Keeping AWDL active
+    /// has a cost on Wi-Fi throughput/latency, so only enable it when needed.
+    #[cfg(target_vendor = "apple")]
+    pub fn with_peer_to_peer(mut self, enabled: bool) -> ServiceBrowserBuilder {
+        self.peer_to_peer = enabled;
         self
     }
     /// Starts the browser

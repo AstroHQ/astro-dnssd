@@ -224,8 +224,8 @@ impl ServiceBrowser {
         Ok(r)
     }
 
-    /// Starts browser with type & optional domain
-    fn start(regtype: String, domain: Option<String>) -> Result<Self> {
+    /// Starts browser with type, optional domain & flags
+    fn start(regtype: String, domain: Option<String>, flags: ffi::DNSServiceFlags) -> Result<Self> {
         unsafe {
             let c_domain: Option<CString>;
             if let Some(d) = &domain {
@@ -240,7 +240,7 @@ impl ServiceBrowser {
             let mut raw: ffi::DNSServiceRef = ptr::null_mut();
             let r = ffi::DNSServiceBrowse(
                 &mut raw as _,
-                0,
+                flags,
                 0,
                 service_type.as_ptr(),
                 c_domain.map_or(ptr::null_mut(), |d| d.as_ptr()),
@@ -296,7 +296,11 @@ impl Drop for ServiceBrowser {
 unsafe impl Send for ServiceBrowser {}
 
 pub fn browse(builder: ServiceBrowserBuilder) -> Result<ServiceBrowser> {
-    ServiceBrowser::start(builder.regtype, builder.domain)
+    #[cfg(target_vendor = "apple")]
+    let flags = super::peer_to_peer_flags(builder.peer_to_peer);
+    #[cfg(not(target_vendor = "apple"))]
+    let flags = 0;
+    ServiceBrowser::start(builder.regtype, builder.domain, flags)
 }
 macro_rules! mut_void_ptr {
     ($var:expr) => {

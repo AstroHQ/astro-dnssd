@@ -10,6 +10,8 @@ pub struct DNSServiceBuilder {
     pub(crate) host: Option<String>,
     pub(crate) port: u16,
     pub(crate) txt: Option<HashMap<String, String>>,
+    #[cfg(target_vendor = "apple")]
+    pub(crate) peer_to_peer: bool,
 }
 impl DNSServiceBuilder {
     /// Starts a new service builder with a given type (i.e. _http._tcp)
@@ -21,6 +23,8 @@ impl DNSServiceBuilder {
             host: None,
             port,
             txt: None,
+            #[cfg(target_vendor = "apple")]
+            peer_to_peer: false,
         }
     }
 
@@ -52,6 +56,16 @@ impl DNSServiceBuilder {
         let mut kv = self.txt.take().unwrap_or_default();
         kv.insert(key, value);
         self.txt = Some(kv);
+        self
+    }
+    /// Also advertises over peer-to-peer interfaces such as AWDL, so peers can find the service
+    /// without both devices being on the same network. Off by default.
+    ///
+    /// Sets `kDNSServiceFlagsIncludeP2P | kDNSServiceFlagsIncludeAWDL`. Note that for peers to
+    /// actually connect over AWDL, the listening socket must also set `SO_RECV_ANYIF`.
+    #[cfg(target_vendor = "apple")]
+    pub fn with_peer_to_peer(mut self, enabled: bool) -> DNSServiceBuilder {
+        self.peer_to_peer = enabled;
         self
     }
     /// Registers service, advertising it on the network
