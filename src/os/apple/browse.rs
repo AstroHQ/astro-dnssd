@@ -136,15 +136,26 @@ fn service_from_resolved(discovered: DiscoveredService, resolved: Vec<ResolvedSe
     if resolved.len() > 1 {
         warn!("We resolved > 1 services, unsupported. using first");
     }
-    let (port, hostname, txt_record) = match resolved.into_iter().next() {
-        Some(resolved) => (resolved.port, resolved.hostname, resolved.txt_record),
-        None => (0, "".to_string(), None),
+    let (port, hostname, txt_record, resolved_interface) = match resolved.into_iter().next() {
+        Some(resolved) => (
+            resolved.port,
+            resolved.hostname,
+            resolved.txt_record,
+            resolved.interface_index,
+        ),
+        None => (0, "".to_string(), None, 0),
+    };
+    // Browse can report a placeholder like kDNSServiceInterfaceIndexP2P, resolve reports the concrete interface
+    let interface_index = if resolved_interface != 0 {
+        resolved_interface
+    } else {
+        discovered.interface_index
     };
     Service {
         name: discovered.name,
         domain: discovered.domain,
         regtype: discovered.regtype,
-        interface_index: Some(discovered.interface_index),
+        interface_index: Some(interface_index),
         event_type: discovered.event_type,
         hostname,
         port,
@@ -365,6 +376,8 @@ pub struct ResolvedService {
     pub port: u16,
     /// TXT record service has if any
     pub txt_record: Option<HashMap<String, String>>,
+    /// Interface the service resolved on, concrete even when browse reported kDNSServiceInterfaceIndexP2P
+    pub interface_index: u32,
 }
 impl ToSocketAddrs for ResolvedService {
     type Iter = std::vec::IntoIter<SocketAddr>;
@@ -377,7 +390,7 @@ impl ToSocketAddrs for ResolvedService {
 unsafe extern "C" fn resolve_callback(
     _sd_ref: ffi::DNSServiceRef,
     flags: ffi::DNSServiceFlags,
-    _interface_index: u32,
+    interface_index: u32,
     error_code: ffi::DNSServiceErrorType,
     full_name: *const c_char,
     host_target: *const c_char,
@@ -425,6 +438,7 @@ unsafe extern "C" fn resolve_callback(
                 hostname,
                 port: u16::from_be(port),
                 txt_record,
+                interface_index,
             };
             context.results.push(service);
         }
@@ -494,6 +508,11 @@ fn hash_from_txt(data: &[u8]) -> Result<HashMap<String, String>> {
     }
 }
 
+/// kDNSServiceInterfaceIndexP2P, bindgen skips it as it's a cast in a `#define`. Only valid for browse, query record,
+/// register & resolve, not address lookups
+#[cfg(target_vendor = "apple")]
+const INTERFACE_INDEX_P2P: u32 = 0xffff_fffd;
+
 /// Longest single wait on the mDNSResponder socket while looking up addresses, keeps `select`'s timeout under a second
 #[cfg(target_vendor = "apple")]
 const ADDR_INFO_POLL: Duration = Duration::from_millis(100);
@@ -517,6 +536,12 @@ pub fn resolve_socket_addrs(
     timeout: Duration,
 ) -> Result<Vec<SocketAddr>> {
     let c_hostname = CString::new(hostname).map_err(|_| BrowseError::InvalidString)?;
+    // Only left over if resolve didn't report a concrete interface, look everywhere (P2P included) instead
+    let interface_index = if interface_index == INTERFACE_INDEX_P2P {
+        ffi::kDNSServiceInterfaceIndexAny
+    } else {
+        interface_index
+    };
     let lookup = Box::into_raw(Box::new(PendingAddrInfo {
         port,
         interface_index,
@@ -642,5 +667,44 @@ unsafe fn socket_addr_from_raw(
             Some(SocketAddr::V6(SocketAddrV6::new(ip, port, 0, scope)))
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn discovered(interface_index: u32) -> DiscoveredService {
+        DiscoveredService {
+            name: "name".into(),
+            regtype: "_test._tcp".into(),
+            interface_index,
+            domain: "local.".into(),
+            event_type: ServiceEventType::Added,
+        }
+    }
+
+    fn resolved(interface_index: u32) -> ResolvedService {
+        ResolvedService {
+            full_name: "name._test._tcp.local.".into(),
+            hostname: "host.local.".into(),
+            port: 1234,
+            txt_record: None,
+            interface_index,
+        }
+    }
+
+    #[test]
+    fn resolved_interface_replaces_p2p_placeholder() {
+        let service = service_from_resolved(discovered(0xffff_fffd), vec![resolved(19)]);
+        assert_eq!(service.interface_index, Some(19));
+    }
+
+    #[test]
+    fn browse_interface_kept_without_resolved_interface() {
+        let service = service_from_resolved(discovered(7), vec![resolved(0)]);
+        assert_eq!(service.interface_index, Some(7));
+        let service = service_from_resolved(discovered(7), vec![]);
+        assert_eq!(service.interface_index, Some(7));
     }
 }

@@ -22,7 +22,8 @@ pub struct Service {
     pub name: String,
     /// Registration type, i.e. _http._tcp.
     pub regtype: String,
-    /// Interface index (unsure what this is for)
+    /// Index of the network interface the service was found on. On Apple platforms this is the interface it resolved
+    /// on, so it's a real interface even for peer-to-peer services that browse reports as `kDNSServiceInterfaceIndexP2P`
     pub interface_index: Option<u32>,
     /// Domain service is on, typically local.
     pub domain: String,
@@ -40,7 +41,7 @@ pub struct Service {
 
 #[cfg(target_vendor = "apple")]
 impl Service {
-    /// Looks up the service host's addresses through mDNSResponder on the interface the service was found on, including
+    /// Looks up the service host's addresses through mDNSResponder on the interface the service resolved on, including
     /// peer-to-peer interfaces such as AWDL, which `getaddrinfo` doesn't search. IPv6 link-local addresses come back
     /// scoped to their interface. Returns the first batch of answers, waiting up to `timeout` for it
     pub fn resolve_socket_addrs(&self, timeout: Duration) -> Result<Vec<SocketAddr>> {
