@@ -6,11 +6,15 @@ use crate::ServiceBrowserBuilder;
 use std::collections::HashMap;
 use std::ffi::{c_void, CStr, CString};
 use std::io::{Error as IoError, ErrorKind};
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs};
+#[cfg(target_vendor = "apple")]
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddrV4, SocketAddrV6};
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::os::raw::c_char;
 use std::ptr;
 use std::sync::mpsc::{sync_channel, Receiver, RecvTimeoutError, SyncSender};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(target_vendor = "apple")]
+use std::time::Instant;
 use thiserror::Error;
 
 impl From<ffi::DNSServiceFlags> for ServiceEventType {
@@ -718,115 +722,6 @@ mod tests {
         }
     }
 
-    fn pending_addr_info() -> PendingAddrInfo {
-        PendingAddrInfo {
-            port: 1234,
-            interface_index: 19,
-            more_coming: true,
-            error: None,
-            addrs: Vec::new(),
-            no_ipv4: false,
-            no_ipv6: false,
-        }
-    }
-
-    fn sockaddr_v4(ip: Ipv4Addr) -> libc::sockaddr_in {
-        let mut addr: libc::sockaddr_in = unsafe { std::mem::zeroed() };
-        addr.sin_len = std::mem::size_of::<libc::sockaddr_in>() as _;
-        addr.sin_family = libc::AF_INET as _;
-        addr.sin_addr.s_addr = u32::from(ip).to_be();
-        addr
-    }
-
-    fn sockaddr_v6(ip: Ipv6Addr) -> libc::sockaddr_in6 {
-        let mut addr: libc::sockaddr_in6 = unsafe { std::mem::zeroed() };
-        addr.sin6_len = std::mem::size_of::<libc::sockaddr_in6>() as _;
-        addr.sin6_family = libc::AF_INET6 as _;
-        addr.sin6_addr.s6_addr = ip.octets();
-        addr
-    }
-
-    /// Feeds one GetAddrInfo answer to the callback like mDNSResponder would
-    fn answer<T>(
-        pending: &mut PendingAddrInfo,
-        error_code: ffi::DNSServiceErrorType,
-        more_coming: bool,
-        address: &T,
-    ) {
-        let mut flags = ffi::kDNSServiceFlagsAdd;
-        if more_coming {
-            flags |= ffi::kDNSServiceFlagsMoreComing;
-        }
-        unsafe {
-            addr_info_callback(
-                ptr::null_mut(),
-                flags,
-                19,
-                error_code,
-                ptr::null(),
-                address as *const T as *const ffi::sockaddr,
-                120,
-                pending as *mut PendingAddrInfo as *mut c_void,
-            )
-        }
-    }
-
-    #[test]
-    fn missing_ipv4_keeps_ipv6_addresses() {
-        let mut pending = pending_addr_info();
-        answer(
-            &mut pending,
-            ffi::kDNSServiceErr_NoSuchRecord,
-            true,
-            &sockaddr_v4(Ipv4Addr::UNSPECIFIED),
-        );
-        let ip: Ipv6Addr = "fe80::1".parse().unwrap();
-        answer(
-            &mut pending,
-            kDNSServiceErr_NoError,
-            false,
-            &sockaddr_v6(ip),
-        );
-        assert_eq!(pending.error, None);
-        assert!(pending.no_ipv4 && !pending.no_ipv6);
-        assert!(!pending.more_coming);
-        assert_eq!(
-            pending.addrs,
-            vec![SocketAddr::V6(SocketAddrV6::new(ip, 1234, 0, 19))]
-        );
-    }
-
-    #[test]
-    fn missing_ipv6_after_ipv4_address_is_not_an_error() {
-        let mut pending = pending_addr_info();
-        let ip = Ipv4Addr::new(192, 168, 1, 2);
-        answer(&mut pending, kDNSServiceErr_NoError, true, &sockaddr_v4(ip));
-        answer(
-            &mut pending,
-            ffi::kDNSServiceErr_NoSuchRecord,
-            false,
-            &sockaddr_v6(Ipv6Addr::UNSPECIFIED),
-        );
-        assert_eq!(pending.error, None);
-        assert!(pending.no_ipv6);
-        assert_eq!(
-            pending.addrs,
-            vec![SocketAddr::V4(SocketAddrV4::new(ip, 1234))]
-        );
-    }
-
-    #[test]
-    fn other_errors_still_fail_lookup() {
-        let mut pending = pending_addr_info();
-        answer(
-            &mut pending,
-            ffi::kDNSServiceErr_Unknown,
-            false,
-            &sockaddr_v4(Ipv4Addr::UNSPECIFIED),
-        );
-        assert_eq!(pending.error, Some(ffi::kDNSServiceErr_Unknown));
-    }
-
     #[test]
     fn resolved_interface_replaces_p2p_placeholder() {
         let service = service_from_resolved(discovered(0xffff_fffd), vec![resolved(19)]);
@@ -839,5 +734,120 @@ mod tests {
         assert_eq!(service.interface_index, Some(7));
         let service = service_from_resolved(discovered(7), vec![]);
         assert_eq!(service.interface_index, Some(7));
+    }
+
+    /// Address lookups are only built on Apple platforms, see [`resolve_socket_addrs`]
+    #[cfg(target_vendor = "apple")]
+    mod addr_info {
+        use super::super::*;
+
+        fn pending_addr_info() -> PendingAddrInfo {
+            PendingAddrInfo {
+                port: 1234,
+                interface_index: 19,
+                more_coming: true,
+                error: None,
+                addrs: Vec::new(),
+                no_ipv4: false,
+                no_ipv6: false,
+            }
+        }
+
+        fn sockaddr_v4(ip: Ipv4Addr) -> libc::sockaddr_in {
+            let mut addr: libc::sockaddr_in = unsafe { std::mem::zeroed() };
+            addr.sin_len = std::mem::size_of::<libc::sockaddr_in>() as _;
+            addr.sin_family = libc::AF_INET as _;
+            addr.sin_addr.s_addr = u32::from(ip).to_be();
+            addr
+        }
+
+        fn sockaddr_v6(ip: Ipv6Addr) -> libc::sockaddr_in6 {
+            let mut addr: libc::sockaddr_in6 = unsafe { std::mem::zeroed() };
+            addr.sin6_len = std::mem::size_of::<libc::sockaddr_in6>() as _;
+            addr.sin6_family = libc::AF_INET6 as _;
+            addr.sin6_addr.s6_addr = ip.octets();
+            addr
+        }
+
+        /// Feeds one GetAddrInfo answer to the callback like mDNSResponder would
+        fn answer<T>(
+            pending: &mut PendingAddrInfo,
+            error_code: ffi::DNSServiceErrorType,
+            more_coming: bool,
+            address: &T,
+        ) {
+            let mut flags = ffi::kDNSServiceFlagsAdd;
+            if more_coming {
+                flags |= ffi::kDNSServiceFlagsMoreComing;
+            }
+            unsafe {
+                addr_info_callback(
+                    ptr::null_mut(),
+                    flags,
+                    19,
+                    error_code,
+                    ptr::null(),
+                    address as *const T as *const ffi::sockaddr,
+                    120,
+                    pending as *mut PendingAddrInfo as *mut c_void,
+                )
+            }
+        }
+
+        #[test]
+        fn missing_ipv4_keeps_ipv6_addresses() {
+            let mut pending = pending_addr_info();
+            answer(
+                &mut pending,
+                ffi::kDNSServiceErr_NoSuchRecord,
+                true,
+                &sockaddr_v4(Ipv4Addr::UNSPECIFIED),
+            );
+            let ip: Ipv6Addr = "fe80::1".parse().unwrap();
+            answer(
+                &mut pending,
+                kDNSServiceErr_NoError,
+                false,
+                &sockaddr_v6(ip),
+            );
+            assert_eq!(pending.error, None);
+            assert!(pending.no_ipv4 && !pending.no_ipv6);
+            assert!(!pending.more_coming);
+            assert_eq!(
+                pending.addrs,
+                vec![SocketAddr::V6(SocketAddrV6::new(ip, 1234, 0, 19))]
+            );
+        }
+
+        #[test]
+        fn missing_ipv6_after_ipv4_address_is_not_an_error() {
+            let mut pending = pending_addr_info();
+            let ip = Ipv4Addr::new(192, 168, 1, 2);
+            answer(&mut pending, kDNSServiceErr_NoError, true, &sockaddr_v4(ip));
+            answer(
+                &mut pending,
+                ffi::kDNSServiceErr_NoSuchRecord,
+                false,
+                &sockaddr_v6(Ipv6Addr::UNSPECIFIED),
+            );
+            assert_eq!(pending.error, None);
+            assert!(pending.no_ipv6);
+            assert_eq!(
+                pending.addrs,
+                vec![SocketAddr::V4(SocketAddrV4::new(ip, 1234))]
+            );
+        }
+
+        #[test]
+        fn other_errors_still_fail_lookup() {
+            let mut pending = pending_addr_info();
+            answer(
+                &mut pending,
+                ffi::kDNSServiceErr_Unknown,
+                false,
+                &sockaddr_v4(Ipv4Addr::UNSPECIFIED),
+            );
+            assert_eq!(pending.error, Some(ffi::kDNSServiceErr_Unknown));
+        }
     }
 }
