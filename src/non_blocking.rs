@@ -48,7 +48,7 @@ mod os {
             let fd = socket;
             let mut timeout = libc::timeval {
                 tv_sec: timeout.as_secs() as _,
-                tv_usec: timeout.as_micros() as _,
+                tv_usec: timeout.subsec_micros() as _,
             };
             let mut read_set = std::mem::zeroed();
             libc::FD_ZERO(&mut read_set);

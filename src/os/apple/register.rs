@@ -247,10 +247,15 @@ pub fn register_service(service: DNSServiceBuilder) -> Result<RegisteredDnsServi
         let (tx, rx) = sync_channel::<Result<DNSServiceRegisterReply>>(4);
         let tx = Box::into_raw(Box::new(tx));
 
+        #[cfg(target_vendor = "apple")]
+        let flags = super::peer_to_peer_flags(service.peer_to_peer);
+        #[cfg(not(target_vendor = "apple"))]
+        let flags = 0;
+
         let mut raw: DNSServiceRef = null_mut();
         let result = DNSServiceRegister(
             &mut raw,
-            0,
+            flags,
             0,
             c_name.map_or(null_mut(), |c| c.as_ptr()),
             service_type.as_ptr(),

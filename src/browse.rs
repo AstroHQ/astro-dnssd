@@ -1,5 +1,7 @@
 pub use crate::os::{BrowseError, ServiceBrowser};
 use std::collections::HashMap;
+#[cfg(target_vendor = "apple")]
+use std::{net::SocketAddr, time::Duration};
 
 /// Service browsing result type
 pub type Result<T, E = BrowseError> = std::result::Result<T, E>;
@@ -20,7 +22,8 @@ pub struct Service {
     pub name: String,
     /// Registration type, i.e. _http._tcp.
     pub regtype: String,
-    /// Interface index (unsure what this is for)
+    /// Index of the network interface the service was found on. On Apple platforms this is the interface it resolved
+    /// on, so it's a real interface even for peer-to-peer services that browse reports as `kDNSServiceInterfaceIndexP2P`
     pub interface_index: Option<u32>,
     /// Domain service is on, typically local.
     pub domain: String,
@@ -36,10 +39,27 @@ pub struct Service {
     pub txt_record: Option<HashMap<String, String>>,
 }
 
+#[cfg(target_vendor = "apple")]
+impl Service {
+    /// Looks up the service host's addresses through mDNSResponder on the interface the service resolved on, including
+    /// peer-to-peer interfaces such as AWDL, which `getaddrinfo` doesn't search. IPv6 link-local addresses come back
+    /// scoped to their interface. Returns the first batch of answers, waiting up to `timeout` for it
+    pub fn resolve_socket_addrs(&self, timeout: Duration) -> Result<Vec<SocketAddr>> {
+        crate::os::resolve_socket_addrs(
+            &self.hostname,
+            self.port,
+            self.interface_index.unwrap_or(0),
+            timeout,
+        )
+    }
+}
+
 /// Builder for creating a browser, allowing optionally specifying a domain with chaining (maybe builder is excessive)
 pub struct ServiceBrowserBuilder {
     pub(crate) regtype: String,
     pub(crate) domain: Option<String>,
+    #[cfg(target_vendor = "apple")]
+    pub(crate) peer_to_peer: bool,
 }
 
 impl ServiceBrowserBuilder {
@@ -48,11 +68,23 @@ impl ServiceBrowserBuilder {
         ServiceBrowserBuilder {
             regtype: String::from(regtype),
             domain: None,
+            #[cfg(target_vendor = "apple")]
+            peer_to_peer: false,
         }
     }
     /// Adds a specified domain to browser's search
     pub fn with_domain(mut self, domain: &str) -> ServiceBrowserBuilder {
         self.domain = Some(String::from(domain));
+        self
+    }
+    /// Also browses over peer-to-peer interfaces such as AWDL, so services can be found
+    /// without both devices being on the same network. Off by default.
+    ///
+    /// Sets `kDNSServiceFlagsIncludeP2P | kDNSServiceFlagsIncludeAWDL`. Keeping AWDL active
+    /// has a cost on Wi-Fi throughput/latency, so only enable it when needed.
+    #[cfg(target_vendor = "apple")]
+    pub fn with_peer_to_peer(mut self, enabled: bool) -> ServiceBrowserBuilder {
+        self.peer_to_peer = enabled;
         self
     }
     /// Starts the browser
