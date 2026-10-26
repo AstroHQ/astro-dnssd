@@ -6,11 +6,11 @@ use crate::ServiceBrowserBuilder;
 use std::collections::HashMap;
 use std::ffi::{c_void, CStr, CString};
 use std::io::{Error as IoError, ErrorKind};
-use std::net::{SocketAddr, ToSocketAddrs};
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs};
 use std::os::raw::c_char;
 use std::ptr;
 use std::sync::mpsc::{sync_channel, Receiver, RecvTimeoutError, SyncSender};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use thiserror::Error;
 
 impl From<ffi::DNSServiceFlags> for ServiceEventType {
@@ -491,5 +491,156 @@ fn hash_from_txt(data: &[u8]) -> Result<HashMap<String, String>> {
             }
         }
         Ok(hash)
+    }
+}
+
+/// Longest single wait on the mDNSResponder socket while looking up addresses, keeps `select`'s timeout under a second
+#[cfg(target_vendor = "apple")]
+const ADDR_INFO_POLL: Duration = Duration::from_millis(100);
+
+/// Addresses found so far for one [`resolve_socket_addrs`] lookup, filled in by [`addr_info_callback`]
+#[cfg(target_vendor = "apple")]
+struct PendingAddrInfo {
+    port: u16,
+    interface_index: u32,
+    more_coming: bool,
+    error: Option<ffi::DNSServiceErrorType>,
+    addrs: Vec<SocketAddr>,
+}
+
+/// See [`crate::Service::resolve_socket_addrs`]. `interface_index` 0 looks on every interface, peer-to-peer ones too
+#[cfg(target_vendor = "apple")]
+pub fn resolve_socket_addrs(
+    hostname: &str,
+    port: u16,
+    interface_index: u32,
+    timeout: Duration,
+) -> Result<Vec<SocketAddr>> {
+    let c_hostname = CString::new(hostname).map_err(|_| BrowseError::InvalidString)?;
+    let lookup = Box::into_raw(Box::new(PendingAddrInfo {
+        port,
+        interface_index,
+        more_coming: true,
+        error: None,
+        addrs: Vec::new(),
+    }));
+    let mut sdref: ffi::DNSServiceRef = ptr::null_mut();
+    let r = unsafe {
+        ffi::DNSServiceGetAddrInfo(
+            &mut sdref,
+            super::peer_to_peer_flags(true),
+            interface_index,
+            (ffi::kDNSServiceProtocol_IPv4 | ffi::kDNSServiceProtocol_IPv6) as _,
+            c_hostname.as_ptr(),
+            Some(addr_info_callback),
+            lookup as *mut c_void,
+        )
+    };
+    if r != kDNSServiceErr_NoError {
+        // SAFETY: mDNSResponder didn't take the context, so it's still only ours
+        drop(unsafe { Box::from_raw(lookup) });
+        return Err(BrowseError::ServiceError(r));
+    }
+
+    let deadline = Instant::now() + timeout;
+    let result = loop {
+        // SAFETY: the callback only runs inside DNSServiceProcessResult below, never while we read
+        let pending = unsafe { &*lookup };
+        if let Some(e) = pending.error {
+            break Err(BrowseError::ServiceError(e));
+        }
+        if !pending.addrs.is_empty() && !pending.more_coming {
+            break Ok(());
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            break if pending.addrs.is_empty() {
+                Err(BrowseError::Timeout)
+            } else {
+                Ok(())
+            };
+        }
+        let fd = unsafe { ffi::DNSServiceRefSockFD(sdref) };
+        match crate::non_blocking::socket_is_ready(fd as _, remaining.min(ADDR_INFO_POLL)) {
+            Ok(true) => {
+                let r = unsafe { ffi::DNSServiceProcessResult(sdref) };
+                if r != kDNSServiceErr_NoError {
+                    break Err(BrowseError::ServiceError(r));
+                }
+            }
+            Ok(false) => {}
+            Err(e) => break Err(e.into()),
+        }
+    };
+
+    // SAFETY: deallocating first stops any more callbacks, then the context is only ours again
+    unsafe { ffi::DNSServiceRefDeallocate(sdref) };
+    let pending = unsafe { Box::from_raw(lookup) };
+    result.map(|()| pending.addrs)
+}
+
+#[cfg(target_vendor = "apple")]
+unsafe extern "C" fn addr_info_callback(
+    _sd_ref: ffi::DNSServiceRef,
+    flags: ffi::DNSServiceFlags,
+    interface_index: u32,
+    error_code: ffi::DNSServiceErrorType,
+    _hostname: *const c_char,
+    address: *const ffi::sockaddr,
+    _ttl: u32,
+    context: *mut c_void,
+) {
+    let pending: &mut PendingAddrInfo = &mut *(context as *mut PendingAddrInfo);
+    if error_code != kDNSServiceErr_NoError {
+        error!("Error looking up addresses: {}", error_code);
+        pending.error = Some(error_code);
+        return;
+    }
+    pending.more_coming = flags & ffi::kDNSServiceFlagsMoreComing != 0;
+    if flags & ffi::kDNSServiceFlagsAdd == 0 || address.is_null() {
+        return;
+    }
+    let interface_index = if interface_index != 0 {
+        interface_index
+    } else {
+        pending.interface_index
+    };
+    if let Some(addr) = socket_addr_from_raw(
+        address as *const libc::sockaddr,
+        pending.port,
+        interface_index,
+    ) {
+        if !pending.addrs.contains(&addr) {
+            pending.addrs.push(addr);
+        }
+    }
+}
+
+/// Converts a C socket address to a Rust one with `port`. A link-local IPv6 address without a scope gets
+/// `interface_index`, it can't be used without one
+#[cfg(target_vendor = "apple")]
+unsafe fn socket_addr_from_raw(
+    address: *const libc::sockaddr,
+    port: u16,
+    interface_index: u32,
+) -> Option<SocketAddr> {
+    match (*address).sa_family as i32 {
+        libc::AF_INET => {
+            let v4 = &*(address as *const libc::sockaddr_in);
+            let ip = Ipv4Addr::from(u32::from_be(v4.sin_addr.s_addr));
+            Some(SocketAddr::V4(SocketAddrV4::new(ip, port)))
+        }
+        libc::AF_INET6 => {
+            let v6 = &*(address as *const libc::sockaddr_in6);
+            let ip = Ipv6Addr::from(v6.sin6_addr.s6_addr);
+            let link_local = ip.segments()[0] & 0xffc0 == 0xfe80;
+            let scope = if v6.sin6_scope_id == 0 && link_local {
+                interface_index
+            } else {
+                v6.sin6_scope_id
+            };
+            Some(SocketAddr::V6(SocketAddrV6::new(ip, port, 0, scope)))
+        }
+        _ => None,
     }
 }

@@ -1,5 +1,7 @@
 pub use crate::os::{BrowseError, ServiceBrowser};
 use std::collections::HashMap;
+#[cfg(target_vendor = "apple")]
+use std::{net::SocketAddr, time::Duration};
 
 /// Service browsing result type
 pub type Result<T, E = BrowseError> = std::result::Result<T, E>;
@@ -34,6 +36,21 @@ pub struct Service {
     pub port: u16,
     /// TXT record service has if any
     pub txt_record: Option<HashMap<String, String>>,
+}
+
+#[cfg(target_vendor = "apple")]
+impl Service {
+    /// Looks up the service host's addresses through mDNSResponder on the interface the service was found on, including
+    /// peer-to-peer interfaces such as AWDL, which `getaddrinfo` doesn't search. IPv6 link-local addresses come back
+    /// scoped to their interface. Returns the first batch of answers, waiting up to `timeout` for it
+    pub fn resolve_socket_addrs(&self, timeout: Duration) -> Result<Vec<SocketAddr>> {
+        crate::os::resolve_socket_addrs(
+            &self.hostname,
+            self.port,
+            self.interface_index.unwrap_or(0),
+            timeout,
+        )
+    }
 }
 
 /// Builder for creating a browser, allowing optionally specifying a domain with chaining (maybe builder is excessive)

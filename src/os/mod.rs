@@ -9,6 +9,8 @@ pub use windows::{
 
 #[cfg(any(feature = "win-bonjour", not(target_os = "windows")))]
 mod apple;
+#[cfg(target_vendor = "apple")]
+pub use apple::browse::resolve_socket_addrs;
 #[cfg(any(feature = "win-bonjour", not(target_os = "windows")))]
 pub use apple::{
     browse::{browse, BrowseError, ServiceBrowser},
