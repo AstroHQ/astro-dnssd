@@ -256,7 +256,7 @@ pub fn register_service(service: DNSServiceBuilder) -> Result<RegisteredDnsServi
         let result = DNSServiceRegister(
             &mut raw,
             flags,
-            0,
+            service.interface_index,
             c_name.map_or(null_mut(), |c| c.as_ptr()),
             service_type.as_ptr(),
             null(),
