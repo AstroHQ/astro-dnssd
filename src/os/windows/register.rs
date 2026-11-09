@@ -132,16 +132,17 @@ fn computer_name() -> Option<String> {
     None
 }
 
+/// Takes ownership of the boxed sender in `context`. The caller can time out and drop the receiver before this runs,
+/// so the box can only be freed here, and a failed send is fine.
 unsafe extern "C" fn register_callback(
     status: DWORD,
     context: PVOID,
     instance: PDNS_SERVICE_INSTANCE,
 ) {
     if !context.is_null() {
-        let tx_ptr: *mut SyncSender<DWORD> = context as _;
-        let tx = &*tx_ptr;
+        let tx = Box::from_raw(context as *mut SyncSender<DWORD>);
         trace!("Register complete: {} return code", status);
-        tx.send(status).unwrap();
+        _ = tx.send(status);
     }
     ffi::DnsServiceFreeInstance(instance);
 }
@@ -169,7 +170,10 @@ impl RegisteredDnsService {
             error!("Failed to create service: {:?}", error);
             return Err(error.into());
         }
-        self.deregister()?;
+        if let Err(e) = self.deregister() {
+            unsafe { ffi::DnsServiceFreeInstance(service) };
+            return Err(e);
+        }
         unsafe { ffi::DnsServiceFreeInstance(self.service) };
         self.service = service;
         self.request.pServiceInstance = service;
@@ -189,10 +193,11 @@ impl RegisteredDnsService {
             self.free_context();
             return Err(IoError::from_raw_os_error(result as _).into());
         }
+
+        // the callback owns the context now
+        self.request.pQueryContext = null_mut();
         self.registered = false;
-        let status = rx.recv_timeout(CALLBACK_TIMEOUT);
-        self.free_context();
-        match status {
+        match rx.recv_timeout(CALLBACK_TIMEOUT) {
             Ok(0) => Ok(()),
             Ok(e) => {
                 error!("De-registration callback returned error: {}", e);
@@ -208,6 +213,7 @@ impl RegisteredDnsService {
         }
     }
 
+    /// Only for when the call didn't return `DNS_REQUEST_PENDING`, otherwise `register_callback` frees it
     fn free_context(&mut self) {
         if !self.request.pQueryContext.is_null() {
             _ = unsafe { Box::from_raw(self.request.pQueryContext as *mut SyncSender<u32>) };
@@ -235,22 +241,20 @@ impl RegisteredDnsService {
             self.free_context();
             return Err(IoError::from_raw_os_error(result as _).into());
         }
+        self.request.pQueryContext = null_mut();
 
         match rx.recv_timeout(CALLBACK_TIMEOUT) {
             Ok(0) => {
                 // DNS_RCODE_NOERROR, from: https://docs.microsoft.com/en-us/windows/win32/dns/dns-constants#dns-response-codes
-                self.free_context();
                 self.registered = true;
                 Ok(())
             }
             Ok(e) => {
                 error!("Registration callback returned error: {}", e);
-                self.free_context();
                 Err(RegistrationError::DnsStatusError(e))
             }
             Err(_e) => {
                 error!("Timed out waiting for registration callback");
-                self.free_context();
                 Err(
                     IoError::new(ErrorKind::TimedOut, "Timed out waiting for async callback")
                         .into(),
