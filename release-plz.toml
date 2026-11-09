@@ -1,0 +1,38 @@
+[workspace]
+# only release when a release PR is merged, not on every push to develop
+release_always = false
+# only these bump a version; docs/chore/ci/test-only changes don't cut a release
+release_commits = "^(feat|fix|perf|refactor)(\\(.*\\))?!?:"
+pr_labels = ["release"]
+
+[changelog]
+# cocogitto's format, same as astro-monitor. release-plz splices this in right after the header's trailing `- - -`, so no
+# trimming. parse-changelog needs the version first in the heading, or GitHub releases come out with an empty body.
+# commit.remote.username rather than commit.author.name: release-plz crashes looking up the author of its synthetic
+# "update Cargo.lock dependencies" commit. It's unset for commits GitHub can't tie to an account, hence the `if`.
+trim = false
+
+# only used when release-plz creates CHANGELOG.md
+header = """
+# Changelog
+All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
+
+- - -
+"""
+body = """
+## v{{ version }} - {{ timestamp | date(format="%Y-%m-%d") }}
+{%- for group, commits in commits | group_by(attribute="group") %}
+#### {{ group | striptags | trim }}
+{%- for commit in commits %}
+- {% if commit.scope %}**({{ commit.scope }})** {% endif %}{% if commit.breaking %}[**breaking**] {% endif %}{{ commit.message }} - ({{ commit.id | truncate(length=7, end="") }}){% if commit.remote.username %} - *{{ commit.remote.username }}*{% endif %}
+{%- endfor %}
+{% endfor %}
+- - -"""
+commit_parsers = [
+    { message = "^feat", group = "<!-- 0 -->Features" },
+    { message = "^fix", group = "<!-- 1 -->Bug Fixes" },
+    { message = "^perf", group = "<!-- 2 -->Performance Improvements" },
+    { message = "^refactor", group = "<!-- 3 -->Refactoring" },
+    { message = "^revert", group = "<!-- 4 -->Reverts" },
+    { message = ".*", skip = true },
+]

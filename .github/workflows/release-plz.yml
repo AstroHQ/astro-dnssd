@@ -1,0 +1,66 @@
+name: Release-plz
+
+on:
+  push:
+    branches: [develop]
+
+env:
+  CARGO_TERM_COLOR: always
+
+# public crate on crates.io, so unlike our private crates this runs on GitHub's runners. CARGO_REGISTRY_TOKEN is the org
+# secret kuiper-forge uses
+jobs:
+  # publishes, tags and creates a GitHub release when Cargo.toml has a version crates.io doesn't. Only does anything
+  # once a release PR is merged (release_always = false in release-plz.toml).
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    if: ${{ github.repository_owner == 'AstroHQ' }}
+    permissions:
+      contents: write
+
+      # release_always = false looks up the PR a commit came from
+      pull-requests: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Run release-plz
+        uses: release-plz/action@66b324fd6c72d05d2a08568492ecdd62bfb8a62b # v0.5.148
+        with:
+          command: release
+          version: 0.4.3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  # opens/updates the release PR. Waits for release: run in parallel, it compares against crates.io before the
+  # just-merged version is published and reopens a PR for it.
+  # it's opened with GITHUB_TOKEN so CI doesn't run on it, which is fine: it only touches the version, changelog and
+  # lockfile, and `cargo publish` builds the crate again on release
+  release-pr:
+    name: Release PR
+    needs: release
+    runs-on: ubuntu-latest
+    if: ${{ github.repository_owner == 'AstroHQ' }}
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: release-plz-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Run release-plz
+        uses: release-plz/action@66b324fd6c72d05d2a08568492ecdd62bfb8a62b # v0.5.148
+        with:
+          command: release-pr
+          version: 0.4.3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
