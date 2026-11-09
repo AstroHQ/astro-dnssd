@@ -5,13 +5,14 @@ use crate::{
     ffi::apple::{
         kDNSServiceErr_NoError, kDNSServiceErr_ServiceNotRunning, DNSServiceErrorType,
         DNSServiceFlags, DNSServiceProcessResult, DNSServiceRef, DNSServiceRefDeallocate,
-        DNSServiceRefSockFD, DNSServiceRegister,
+        DNSServiceRefSockFD, DNSServiceRegister, DNSServiceUpdateRecord,
     },
     os::apple::txt::TXTRecord,
     register::Result,
     DNSServiceBuilder,
 };
 use std::{
+    collections::HashMap,
     ffi::{c_void, CStr, CString},
     fmt,
     os::raw::c_char,
@@ -19,7 +20,7 @@ use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
         mpsc::{sync_channel, SyncSender},
-        Arc,
+        Arc, Mutex,
     },
     time::Duration,
 };
@@ -101,6 +102,8 @@ unsafe extern "C" fn register_reply(
 
 /// DNS-SD Service for registration use
 pub struct RegisteredDnsService {
+    // the processing thread uses it too, and calls on one `DNSServiceRef` must not run at the same time
+    service: Arc<Mutex<ServiceRef>>,
     shutdown_flag: Arc<AtomicBool>,
 }
 impl fmt::Debug for RegisteredDnsService {
@@ -146,7 +149,28 @@ impl Drop for ServiceRef {
     }
 }
 
-impl RegisteredDnsService {}
+impl RegisteredDnsService {
+    /// Replaces the service's TXT record. Browsers see the new record without the service going away.
+    pub fn update_txt_record(&mut self, txt: HashMap<String, String>) -> Result<()> {
+        let txt = TXTRecord::from(txt);
+
+        // an empty TXT record is a single zero length string, `DNSServiceRegister` adds it for us but this doesn't
+        let empty = [0u8];
+        let (rdata, rdlen) = match txt.raw_bytes_len() {
+            0 => (empty.as_ptr() as *const c_void, empty.len() as u16),
+            len => (txt.raw_bytes_ptr(), len),
+        };
+        let service = self.service.lock().unwrap_or_else(|e| e.into_inner());
+
+        // a null record ref is the service's primary TXT record, a ttl of 0 is the default
+        let result = unsafe { DNSServiceUpdateRecord(service.raw, null_mut(), 0, rdlen, rdata, 0) };
+        if result == kDNSServiceErr_NoError {
+            Ok(())
+        } else {
+            Err(RegistrationError::ServiceError(result))
+        }
+    }
+}
 
 // Signal the background thread via an atomic flag
 impl Drop for RegisteredDnsService {
@@ -155,8 +179,8 @@ impl Drop for RegisteredDnsService {
         self.shutdown_flag.store(true, Ordering::Relaxed);
     }
 }
-fn run_thread_with_poll(service: ServiceRef, shutdown_flag: Arc<AtomicBool>) {
-    let socket = unsafe { DNSServiceRefSockFD(service.raw) };
+fn run_thread_with_poll(service: Arc<Mutex<ServiceRef>>, shutdown_flag: Arc<AtomicBool>) {
+    let socket = unsafe { DNSServiceRefSockFD(service.lock().unwrap().raw) };
 
     std::thread::spawn(move || {
         loop {
@@ -199,7 +223,10 @@ fn run_thread_with_poll(service: ServiceRef, shutdown_flag: Arc<AtomicBool>) {
                         if poll_fd.revents & libc::POLLIN != 0 {
                             // Data ready to read
                             trace!("Processing DNS-SD result...");
-                            let r = DNSServiceProcessResult(service.raw);
+                            let r = {
+                                let service = service.lock().unwrap_or_else(|e| e.into_inner());
+                                DNSServiceProcessResult(service.raw)
+                            };
                             if r != kDNSServiceErr_NoError {
                                 if r == kDNSServiceErr_ServiceNotRunning {
                                     trace!("DNS-SD service stopped, exiting thread");
@@ -270,12 +297,15 @@ pub fn register_service(service: DNSServiceBuilder) -> Result<RegisteredDnsServi
         if result == kDNSServiceErr_NoError {
             // process callback
             let shutdown_flag = Arc::new(AtomicBool::new(false));
-            let raw_service = ServiceRef::new(raw, tx as _);
+            let raw_service = Arc::new(Mutex::new(ServiceRef::new(raw, tx as _)));
 
             // spin a thread that keeps the registration working
-            run_thread_with_poll(raw_service, shutdown_flag.clone());
+            run_thread_with_poll(raw_service.clone(), shutdown_flag.clone());
 
-            let service = RegisteredDnsService { shutdown_flag };
+            let service = RegisteredDnsService {
+                service: raw_service,
+                shutdown_flag,
+            };
 
             match rx.recv_timeout(CALLBACK_TIMEOUT) {
                 Ok(Ok(_reply)) => Ok(service),

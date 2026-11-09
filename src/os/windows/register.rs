@@ -2,6 +2,7 @@ use crate::ffi::windows as ffi;
 use crate::ffi::windows::{DWORD, PDNS_SERVICE_INSTANCE, PVOID};
 use crate::os::windows::to_utf16;
 use crate::DNSServiceBuilder;
+use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::ffi::OsString;
 use std::fmt;
@@ -37,10 +38,28 @@ struct KeyValues {
     values_ptr: Vec<*mut u16>,
 }
 
+impl KeyValues {
+    fn new(txt: &HashMap<String, String>) -> KeyValues {
+        let mut keys = Vec::with_capacity(txt.len());
+        let mut values = Vec::with_capacity(txt.len());
+        for (key, value) in txt.iter() {
+            keys.push(to_utf16(key));
+            values.push(to_utf16(value));
+        }
+        let keys_ptr = keys.iter_mut().map(|k| k.as_mut_ptr()).collect();
+        let values_ptr = values.iter_mut().map(|v| v.as_mut_ptr()).collect();
+        KeyValues {
+            keys,
+            _values: values,
+            keys_ptr,
+            values_ptr,
+        }
+    }
+}
+
 trait DNSServiceExt {
     fn host_name(&self) -> String;
     fn service_name(&self) -> String;
-    fn txt_key_values(&self) -> Option<KeyValues>;
 }
 
 impl DNSServiceExt for DNSServiceBuilder {
@@ -61,22 +80,40 @@ impl DNSServiceExt for DNSServiceBuilder {
             .unwrap_or_else(|| String::from("Unknown"));
         format!("{}.{}.local", name, self.regtype)
     }
-    fn txt_key_values(&self) -> Option<KeyValues> {
-        let len = self.txt.as_ref()?.len();
-        let mut keys = Vec::with_capacity(len);
-        let mut values = Vec::with_capacity(len);
-        for (key, value) in self.txt.as_ref()?.iter() {
-            keys.push(to_utf16(key));
-            values.push(to_utf16(value));
-        }
-        let keys_ptr = keys.iter_mut().map(|k| k.as_mut_ptr()).collect();
-        let values_ptr = values.iter_mut().map(|v| v.as_mut_ptr()).collect();
-        Some(KeyValues {
-            keys,
-            _values: values,
-            keys_ptr,
-            values_ptr,
-        })
+}
+
+/// Builds the service instance to register. Returns null if it fails, see `GetLastError`
+fn construct_instance(
+    name: &str,
+    host: &str,
+    port: u16,
+    txt: Option<&HashMap<String, String>>,
+) -> *mut ffi::_DNS_SERVICE_INSTANCE {
+    let mut name = to_utf16(name);
+    let mut host = to_utf16(host);
+    let mut kv_store = txt.map(KeyValues::new);
+    let (property_count, keys_ptr, values_ptr) = match kv_store.as_mut() {
+        Some(kv) => (
+            kv.keys.len(),
+            kv.keys_ptr.as_mut_ptr(),
+            kv.values_ptr.as_mut_ptr(),
+        ),
+        None => (0, null_mut() as _, null_mut() as _),
+    };
+    // behavior suggests this copies it's arguments, so we can use pointers to rust stack here
+    unsafe {
+        ffi::DnsServiceConstructInstance(
+            name.as_mut_ptr(),
+            host.as_mut_ptr(),
+            null_mut(),
+            null_mut(),
+            port,
+            0,
+            0,
+            property_count as _,
+            keys_ptr as _,
+            values_ptr as _,
+        )
     }
 }
 
@@ -113,6 +150,7 @@ pub struct RegisteredDnsService {
     registered: bool,
     name: String,
     host: String,
+    port: u16,
     request: ffi::_DNS_SERVICE_REGISTER_REQUEST,
     service: *mut ffi::_DNS_SERVICE_INSTANCE,
 }
@@ -122,6 +160,54 @@ impl fmt::Debug for RegisteredDnsService {
     }
 }
 impl RegisteredDnsService {
+    /// Replaces the service's TXT record. `DnsServiceRegister` can't change a registration, so this de-registers and
+    /// registers again, and browsers see the service go away and come back.
+    pub fn update_txt_record(&mut self, txt: HashMap<String, String>) -> Result<()> {
+        let service = construct_instance(&self.name, &self.host, self.port, Some(&txt));
+        if service.is_null() {
+            let error = IoError::last_os_error();
+            error!("Failed to create service: {:?}", error);
+            return Err(error.into());
+        }
+        self.deregister()?;
+        unsafe { ffi::DnsServiceFreeInstance(self.service) };
+        self.service = service;
+        self.request.pServiceInstance = service;
+        self.register()
+    }
+
+    /// De-registers and waits for it to finish, so registering again doesn't race it
+    fn deregister(&mut self) -> Result<()> {
+        if !self.registered {
+            return Ok(());
+        }
+        let (tx, rx) = sync_channel::<DWORD>(1);
+        self.request.pQueryContext = Box::into_raw(Box::new(tx)) as _;
+        let result = unsafe { ffi::DnsServiceDeRegister(&mut self.request, null_mut()) };
+        if result != DNS_REQUEST_PENDING {
+            error!("Failed to de-register service: {}", result);
+            self.free_context();
+            return Err(IoError::from_raw_os_error(result as _).into());
+        }
+        self.registered = false;
+        let status = rx.recv_timeout(CALLBACK_TIMEOUT);
+        self.free_context();
+        match status {
+            Ok(0) => Ok(()),
+            Ok(e) => {
+                error!("De-registration callback returned error: {}", e);
+                Err(RegistrationError::DnsStatusError(e))
+            }
+            Err(_e) => {
+                error!("Timed out waiting for de-registration callback");
+                Err(
+                    IoError::new(ErrorKind::TimedOut, "Timed out waiting for async callback")
+                        .into(),
+                )
+            }
+        }
+    }
+
     fn free_context(&mut self) {
         if !self.request.pQueryContext.is_null() {
             _ = unsafe { Box::from_raw(self.request.pQueryContext as *mut SyncSender<u32>) };
@@ -176,56 +262,31 @@ impl RegisteredDnsService {
 impl TryFrom<DNSServiceBuilder> for RegisteredDnsService {
     type Error = std::io::Error;
     fn try_from(service: DNSServiceBuilder) -> Result<Self, Self::Error> {
-        unsafe {
-            let original_name = service.service_name();
-            let original_host = service.host_name();
-            let mut name = to_utf16(&original_name);
-            let mut host = to_utf16(&original_host);
-
-            let mut kv_store = service.txt_key_values();
-            let (property_count, keys_ptr, values_ptr) = match kv_store.as_mut() {
-                Some(kv) => (
-                    kv.keys.len(),
-                    kv.keys_ptr.as_mut_ptr(),
-                    kv.values_ptr.as_mut_ptr(),
-                ),
-                None => (0, null_mut() as _, null_mut() as _),
-            };
-            // behavior suggests this copies it's arguments, so we can use pointers to rust stack here
-            let service = ffi::DnsServiceConstructInstance(
-                name.as_mut_ptr(),
-                host.as_mut_ptr(),
-                null_mut(),
-                null_mut(),
-                service.port,
-                0,
-                0,
-                property_count as _,
-                keys_ptr as _,
-                values_ptr as _,
-            );
-            if service.is_null() {
-                let error = IoError::last_os_error();
-                error!("Failed to create service: {:?}", error);
-                return Err(error);
-            }
-            let request = ffi::_DNS_SERVICE_REGISTER_REQUEST {
-                Version: ffi::DNS_QUERY_REQUEST_VERSION1,
-                InterfaceIndex: 0, // 0 says all interfaces
-                pServiceInstance: service,
-                pRegisterCompletionCallback: Some(register_callback),
-                pQueryContext: null_mut(),
-                hCredentials: null_mut(),
-                unicastEnabled: 0, // false for mDNS protocol to advertise
-            };
-            Ok(RegisteredDnsService {
-                name: original_name,
-                host: original_host,
-                registered: false,
-                request,
-                service,
-            })
+        let name = service.service_name();
+        let host = service.host_name();
+        let instance = construct_instance(&name, &host, service.port, service.txt.as_ref());
+        if instance.is_null() {
+            let error = IoError::last_os_error();
+            error!("Failed to create service: {:?}", error);
+            return Err(error);
         }
+        let request = ffi::_DNS_SERVICE_REGISTER_REQUEST {
+            Version: ffi::DNS_QUERY_REQUEST_VERSION1,
+            InterfaceIndex: 0, // 0 says all interfaces
+            pServiceInstance: instance,
+            pRegisterCompletionCallback: Some(register_callback),
+            pQueryContext: null_mut(),
+            hCredentials: null_mut(),
+            unicastEnabled: 0, // false for mDNS protocol to advertise
+        };
+        Ok(RegisteredDnsService {
+            name,
+            host,
+            port: service.port,
+            registered: false,
+            request,
+            service: instance,
+        })
     }
 }
 
