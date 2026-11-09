@@ -9,7 +9,7 @@ use std::fmt;
 use std::io::{Error as IoError, ErrorKind};
 use std::os::windows::ffi::OsStringExt;
 use std::ptr::null_mut;
-use std::sync::mpsc::{sync_channel, SyncSender};
+use std::sync::mpsc::{sync_channel, Receiver, RecvTimeoutError, SyncSender};
 use std::time::Duration;
 use thiserror::Error;
 use winapi::shared::winerror::DNS_REQUEST_PENDING;
@@ -146,9 +146,18 @@ unsafe extern "C" fn register_callback(
     }
     ffi::DnsServiceFreeInstance(instance);
 }
+enum State {
+    /// not advertised
+    Unregistered,
+    /// advertised, or a de-register failed so it might still be
+    Registered,
+    /// `DnsServiceDeRegister` is pending but the callback timed out, so we keep the receiver to wait on it again
+    Deregistering(Receiver<DWORD>),
+}
+
 /// Opaque type for a registered DNS-SD service, de-registering on drop
 pub struct RegisteredDnsService {
-    registered: bool,
+    state: State,
     name: String,
     host: String,
     port: u16,
@@ -180,11 +189,46 @@ impl RegisteredDnsService {
         self.register()
     }
 
-    /// De-registers and waits for it to finish, so registering again doesn't race it
+    /// De-registers and waits for it to finish, so registering again doesn't race it. If an earlier de-register timed
+    /// out, this waits on that one again instead of sending another.
     fn deregister(&mut self) -> Result<()> {
-        if !self.registered {
-            return Ok(());
+        let rx = match std::mem::replace(&mut self.state, State::Unregistered) {
+            State::Unregistered => return Ok(()),
+            State::Deregistering(rx) => rx,
+            State::Registered => match self.start_deregister() {
+                Ok(rx) => rx,
+                Err(e) => {
+                    self.state = State::Registered;
+                    return Err(e);
+                }
+            },
+        };
+        match rx.recv_timeout(CALLBACK_TIMEOUT) {
+            Ok(0) => Ok(()),
+            Ok(e) => {
+                error!("De-registration callback returned error: {}", e);
+                self.state = State::Registered;
+                Err(RegistrationError::DnsStatusError(e))
+            }
+            Err(RecvTimeoutError::Timeout) => {
+                error!("Timed out waiting for de-registration callback");
+                self.state = State::Deregistering(rx);
+                Err(
+                    IoError::new(ErrorKind::TimedOut, "Timed out waiting for async callback")
+                        .into(),
+                )
+            }
+
+            // the callback always sends before it drops the sender, so this shouldn't happen
+            Err(RecvTimeoutError::Disconnected) => {
+                error!("De-registration callback dropped without a status");
+                self.state = State::Registered;
+                Err(IoError::new(ErrorKind::BrokenPipe, "Async callback disconnected").into())
+            }
         }
+    }
+
+    fn start_deregister(&mut self) -> Result<Receiver<DWORD>> {
         let (tx, rx) = sync_channel::<DWORD>(1);
         self.request.pQueryContext = Box::into_raw(Box::new(tx)) as _;
         let result = unsafe { ffi::DnsServiceDeRegister(&mut self.request, null_mut()) };
@@ -196,21 +240,7 @@ impl RegisteredDnsService {
 
         // the callback owns the context now
         self.request.pQueryContext = null_mut();
-        self.registered = false;
-        match rx.recv_timeout(CALLBACK_TIMEOUT) {
-            Ok(0) => Ok(()),
-            Ok(e) => {
-                error!("De-registration callback returned error: {}", e);
-                Err(RegistrationError::DnsStatusError(e))
-            }
-            Err(_e) => {
-                error!("Timed out waiting for de-registration callback");
-                Err(
-                    IoError::new(ErrorKind::TimedOut, "Timed out waiting for async callback")
-                        .into(),
-                )
-            }
-        }
+        Ok(rx)
     }
 
     /// Only for when the call didn't return `DNS_REQUEST_PENDING`, otherwise `register_callback` frees it
@@ -221,7 +251,7 @@ impl RegisteredDnsService {
         }
     }
     fn register(&mut self) -> Result<()> {
-        if self.registered {
+        if !matches!(self.state, State::Unregistered) {
             warn!("Service already registered");
             return Ok(());
         }
@@ -246,7 +276,7 @@ impl RegisteredDnsService {
         match rx.recv_timeout(CALLBACK_TIMEOUT) {
             Ok(0) => {
                 // DNS_RCODE_NOERROR, from: https://docs.microsoft.com/en-us/windows/win32/dns/dns-constants#dns-response-codes
-                self.registered = true;
+                self.state = State::Registered;
                 Ok(())
             }
             Ok(e) => {
@@ -287,7 +317,7 @@ impl TryFrom<DNSServiceBuilder> for RegisteredDnsService {
             name,
             host,
             port: service.port,
-            registered: false,
+            state: State::Unregistered,
             request,
             service: instance,
         })
@@ -296,7 +326,14 @@ impl TryFrom<DNSServiceBuilder> for RegisteredDnsService {
 
 impl Drop for RegisteredDnsService {
     fn drop(&mut self) {
-        if self.registered {
+        let deregister = match &self.state {
+            State::Unregistered => false,
+            State::Registered => true,
+
+            // still in flight unless the callback came back with an error
+            State::Deregistering(rx) => matches!(rx.try_recv(), Ok(status) if status != 0),
+        };
+        if deregister {
             trace!("De-registering service...");
             let r = unsafe { ffi::DnsServiceDeRegister(&mut self.request, std::ptr::null_mut()) };
             if r != DNS_REQUEST_PENDING {
