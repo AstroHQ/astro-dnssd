@@ -58,6 +58,31 @@ unsafe extern "C" fn browse_callback(
     reply_domain: *const c_char,
     context: *mut c_void,
 ) {
+    crate::os::apple::no_unwind("browse_callback", || {
+        browse_callback_body(
+            _sd_ref,
+            flags,
+            interface_index,
+            error_code,
+            service_name,
+            regtype,
+            reply_domain,
+            context,
+        )
+    });
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe fn browse_callback_body(
+    _sd_ref: ffi::DNSServiceRef,
+    flags: ffi::DNSServiceFlags,
+    interface_index: u32,
+    error_code: ffi::DNSServiceErrorType,
+    service_name: *const c_char,
+    regtype: *const c_char,
+    reply_domain: *const c_char,
+    context: *mut c_void,
+) {
     if !context.is_null() {
         // Runs inside DNSServiceProcessResult, so it must never block and never drop an event, see callback_queue
         let tx_ptr: *mut CallbackSender<Result<DiscoveredService>> = context as _;
@@ -344,7 +369,8 @@ impl ServiceBrowser {
                 flags,
                 0,
                 service_type.as_ptr(),
-                c_domain.map_or(ptr::null_mut(), |d| d.as_ptr()),
+                // borrow: the CString must outlive the call
+                c_domain.as_ref().map_or(ptr::null(), |d| d.as_ptr()),
                 Some(browse_callback),
                 tx as _,
             );
@@ -512,6 +538,35 @@ unsafe extern "C" fn resolve_callback(
     txt_record: *const u8,
     context: *mut c_void,
 ) {
+    crate::os::apple::no_unwind("resolve_callback", || {
+        resolve_callback_body(
+            _sd_ref,
+            flags,
+            interface_index,
+            error_code,
+            full_name,
+            host_target,
+            port, // network byte order
+            txt_len,
+            txt_record,
+            context,
+        )
+    });
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe fn resolve_callback_body(
+    _sd_ref: ffi::DNSServiceRef,
+    flags: ffi::DNSServiceFlags,
+    interface_index: u32,
+    error_code: ffi::DNSServiceErrorType,
+    full_name: *const c_char,
+    host_target: *const c_char,
+    port: u16, // network byte order
+    txt_len: u16,
+    txt_record: *const u8,
+    context: *mut c_void,
+) {
     let context: &mut PendingResolution = &mut *(context as *mut PendingResolution);
     if error_code != kDNSServiceErr_NoError {
         error!("Error resolving service: {}", error_code);
@@ -585,7 +640,14 @@ fn hash_from_txt(data: &[u8]) -> Result<HashMap<String, String>> {
             );
             if err == kDNSServiceErr_NoError {
                 let c_str: &CStr = CStr::from_ptr(key.as_ptr());
-                let key: &str = c_str.to_str().unwrap();
+                // any device on the network can send a key that isn't UTF-8, skip it like a bad value below
+                let key: &str = match c_str.to_str() {
+                    Ok(key) => key,
+                    Err(e) => {
+                        warn!("Discarding TXT key that isn't UTF-8: {}", e);
+                        continue;
+                    }
+                };
                 // From the API documentation
                 // For keys with no value, *value is set to NULL and *valueLen is zero.
                 if value.is_null() {
@@ -730,6 +792,32 @@ pub fn resolve_socket_addrs(
 
 #[cfg(target_vendor = "apple")]
 unsafe extern "C" fn addr_info_callback(
+    _sd_ref: ffi::DNSServiceRef,
+    flags: ffi::DNSServiceFlags,
+    interface_index: u32,
+    error_code: ffi::DNSServiceErrorType,
+    _hostname: *const c_char,
+    address: *const ffi::sockaddr,
+    _ttl: u32,
+    context: *mut c_void,
+) {
+    crate::os::apple::no_unwind("addr_info_callback", || {
+        addr_info_callback_body(
+            _sd_ref,
+            flags,
+            interface_index,
+            error_code,
+            _hostname,
+            address,
+            _ttl,
+            context,
+        )
+    });
+}
+
+#[cfg(target_vendor = "apple")]
+#[allow(clippy::too_many_arguments)]
+unsafe fn addr_info_callback_body(
     _sd_ref: ffi::DNSServiceRef,
     flags: ffi::DNSServiceFlags,
     interface_index: u32,
@@ -970,6 +1058,9 @@ mod tests {
 #[cfg(test)]
 mod audit_repro {
     use super::*;
+    use std::sync::Mutex;
+
+    static SEEN_DOMAIN: Mutex<Option<Vec<u8>>> = Mutex::new(None);
 
     // Symbols in the test executable win over libdns_sd's.
     #[no_mangle]
@@ -1007,6 +1098,60 @@ mod audit_repro {
             fds[0]
         })
     }
+    #[no_mangle]
+    unsafe extern "C" fn DNSServiceBrowse(
+        sd_ref: *mut ffi::DNSServiceRef,
+        _flags: ffi::DNSServiceFlags,
+        _interface_index: u32,
+        _regtype: *const c_char,
+        domain: *const c_char,
+        _callback: ffi::DNSServiceBrowseReply,
+        _context: *mut c_void,
+    ) -> ffi::DNSServiceErrorType {
+        *sd_ref = 0x1 as _;
+        if !domain.is_null() {
+            *SEEN_DOMAIN.lock().unwrap() = Some(CStr::from_ptr(domain).to_bytes().to_vec());
+        }
+        kDNSServiceErr_NoError
+    }
+
+    /// A-3: a TXT key that isn't UTF-8 (any device on the LAN can send one) must not panic in the C callback.
+    #[test]
+    fn non_utf8_txt_key_does_not_abort() {
+        let txt = [3u8, 0xff, b'=', b'a'];
+        let mut pending = PendingResolution::default();
+        let name = CString::new("n._test._tcp.local.").unwrap();
+        let host = CString::new("h.local.").unwrap();
+        unsafe {
+            resolve_callback(
+                ptr::null_mut(),
+                0,
+                1,
+                kDNSServiceErr_NoError,
+                name.as_ptr(),
+                host.as_ptr(),
+                80u16.to_be(),
+                txt.len() as u16,
+                txt.as_ptr(),
+                &mut pending as *mut _ as *mut c_void,
+            );
+        }
+        assert_eq!(pending.results.len(), 1);
+    }
+
+    /// A-6: with_domain() hands DNSServiceBrowse a pointer to a CString that was already freed.
+    #[test]
+    fn browse_domain_pointer_is_alive() {
+        let _browser =
+            ServiceBrowser::start("_test._tcp".into(), Some("local.".into()), 0).unwrap();
+        let seen = SEEN_DOMAIN.lock().unwrap().clone();
+        assert_eq!(
+            seen.as_deref(),
+            Some(&b"local."[..]),
+            "DNSServiceBrowse read freed memory"
+        );
+    }
+
     /// A-1: resolve() loops on DNSServiceProcessResult with no deadline and ignores its return value.
     #[test]
     fn resolve_returns_when_service_never_answers() {

@@ -42,7 +42,37 @@ pub enum RegistrationError {
     ServiceError(i32),
 }
 
+/// Hands a reply to register_service() without blocking. Only the first reply is waited for: later ones (a rename
+/// after a name conflict, another domain, a client failure) find the receiver gone or the channel full and are
+/// logged instead, since panicking here would abort the app
+fn send_reply(
+    tx: &SyncSender<Result<DNSServiceRegisterReply>>,
+    reply: Result<DNSServiceRegisterReply>,
+) {
+    if let Err(e) = tx.try_send(reply) {
+        warn!(
+            "Register reply not delivered, nobody waiting for it: {:?}",
+            e
+        );
+    }
+}
+
 unsafe extern "C" fn register_reply(
+    _sd_ref: DNSServiceRef,
+    _flags: DNSServiceFlags,
+    error_code: DNSServiceErrorType,
+    name: *const c_char,
+    regtype: *const c_char,
+    domain: *const c_char,
+    context: *mut c_void,
+) {
+    crate::os::apple::no_unwind("register_reply", || {
+        register_reply_body(_sd_ref, _flags, error_code, name, regtype, domain, context)
+    });
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe fn register_reply_body(
     _sd_ref: DNSServiceRef,
     _flags: DNSServiceFlags,
     error_code: DNSServiceErrorType,
@@ -84,17 +114,16 @@ unsafe extern "C" fn register_reply(
                         name,
                         domain,
                     };
-                    tx.send(Ok(reply)).unwrap();
+                    send_reply(tx, Ok(reply));
                     info!("Reply info sent");
                 } else {
                     error!("Error in reply: {}", error_code);
-                    tx.send(Err(RegistrationError::ServiceError(error_code)))
-                        .unwrap();
+                    send_reply(tx, Err(RegistrationError::ServiceError(error_code)));
                 }
             }
             Err(e) => {
                 error!("Error in reply: {:?}", e);
-                tx.send(Err(e)).unwrap();
+                send_reply(tx, Err(e));
             }
         }
     }
@@ -143,7 +172,13 @@ impl Drop for ServiceRef {
                 trace!("Deallocating DNSServiceRef");
                 DNSServiceRefDeallocate(self.raw);
                 self.raw = null_mut();
-                _ = Box::from_raw(self.context);
+                // the context is the boxed reply sender register_service() handed DNSServiceRegister: free it as
+                // that type, so the sender (and its channel) is dropped and the layout matches the allocation
+                if !self.context.is_null() {
+                    drop(Box::from_raw(
+                        self.context as *mut SyncSender<Result<DNSServiceRegisterReply>>,
+                    ));
+                }
             }
         }
     }
@@ -318,5 +353,49 @@ pub fn register_service(service: DNSServiceBuilder) -> Result<RegisteredDnsServi
         } else {
             Err(RegistrationError::ServiceError(result))
         }
+    }
+}
+
+/// Audit repro (Nye)
+#[cfg(test)]
+mod audit_repro {
+    use super::*;
+
+    /// A-2: register_service() drops the receiver when it returns, so the next register callback (rename after a
+    /// name conflict, another domain, avahi client failure) hits `tx.send(..).unwrap()` and panics in extern "C".
+    #[test]
+    fn second_register_callback_does_not_abort() {
+        let (tx, rx) = sync_channel::<Result<DNSServiceRegisterReply>>(4);
+        let tx = Box::into_raw(Box::new(tx));
+        drop(rx); // what register_service() does on return
+        let s = CString::new("x").unwrap();
+        unsafe {
+            register_reply(
+                null_mut(),
+                0,
+                kDNSServiceErr_NoError,
+                s.as_ptr(),
+                s.as_ptr(),
+                s.as_ptr(),
+                tx as _,
+            );
+            drop(Box::from_raw(tx));
+        }
+    }
+
+    /// A-7: ServiceRef::drop frees the callback context as a Box<c_void>, so the boxed SyncSender is never dropped
+    /// (its channel leaks on every registration) and the allocation is freed with the wrong layout.
+    #[test]
+    fn dropping_service_drops_the_reply_sender() {
+        let (tx, rx) = sync_channel::<Result<DNSServiceRegisterReply>>(4);
+        let tx = Box::into_raw(Box::new(tx));
+        drop(ServiceRef::new(0x1 as _, tx as _));
+        assert!(
+            matches!(
+                rx.try_recv(),
+                Err(std::sync::mpsc::TryRecvError::Disconnected)
+            ),
+            "the reply sender is still alive after the service was dropped"
+        );
     }
 }
