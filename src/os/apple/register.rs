@@ -172,7 +172,13 @@ impl Drop for ServiceRef {
                 trace!("Deallocating DNSServiceRef");
                 DNSServiceRefDeallocate(self.raw);
                 self.raw = null_mut();
-                _ = Box::from_raw(self.context);
+                // the context is the boxed reply sender register_service() handed DNSServiceRegister: free it as
+                // that type, so the sender (and its channel) is dropped and the layout matches the allocation
+                if !self.context.is_null() {
+                    drop(Box::from_raw(
+                        self.context as *mut SyncSender<Result<DNSServiceRegisterReply>>,
+                    ));
+                }
             }
         }
     }
@@ -385,7 +391,10 @@ mod audit_repro {
         let tx = Box::into_raw(Box::new(tx));
         drop(ServiceRef::new(0x1 as _, tx as _));
         assert!(
-            matches!(rx.try_recv(), Err(std::sync::mpsc::TryRecvError::Disconnected)),
+            matches!(
+                rx.try_recv(),
+                Err(std::sync::mpsc::TryRecvError::Disconnected)
+            ),
             "the reply sender is still alive after the service was dropped"
         );
     }
