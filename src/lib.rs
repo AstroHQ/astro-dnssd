@@ -4,6 +4,7 @@
 
 // pub mod browser;
 mod browse;
+mod callback_queue;
 mod ffi;
 mod non_blocking;
 mod os;

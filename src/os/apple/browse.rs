@@ -1,6 +1,7 @@
 use crate::ffi::apple as ffi;
 // use std::collections::HashMap;
 use crate::browse::{Service, ServiceEventType};
+use crate::callback_queue::{callback_queue, CallbackSender};
 use crate::ffi::apple::kDNSServiceErr_NoError;
 use crate::ServiceBrowserBuilder;
 use std::collections::HashMap;
@@ -11,10 +12,8 @@ use std::net::{Ipv4Addr, Ipv6Addr, SocketAddrV4, SocketAddrV6};
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::os::raw::c_char;
 use std::ptr;
-use std::sync::mpsc::{sync_channel, Receiver, RecvTimeoutError, SyncSender};
-use std::time::Duration;
-#[cfg(target_vendor = "apple")]
-use std::time::Instant;
+use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender, TryRecvError};
+use std::time::{Duration, Instant};
 use thiserror::Error;
 
 impl From<ffi::DNSServiceFlags> for ServiceEventType {
@@ -60,16 +59,14 @@ unsafe extern "C" fn browse_callback(
     context: *mut c_void,
 ) {
     if !context.is_null() {
-        let tx_ptr: *mut SyncSender<Result<DiscoveredService>> = context as _;
+        // Runs inside DNSServiceProcessResult, so it must never block and never drop an event, see callback_queue
+        let tx_ptr: *mut CallbackSender<Result<DiscoveredService>> = context as _;
         let tx = &*tx_ptr;
 
         // shouldn't need any other args if there's an error
         if error_code != 0 {
-            match tx.try_send(Err(BrowseError::ServiceError(error_code))) {
-                Ok(_) => {}
-                Err(e) => {
-                    error!("Error sending service notification on channel: {:?}", e);
-                }
+            if tx.push(Err(BrowseError::ServiceError(error_code))).is_err() {
+                warn!("Browser stopped, dropping browse error {}", error_code);
             }
             return;
         }
@@ -104,19 +101,15 @@ unsafe extern "C" fn browse_callback(
                     event_type: flags.into(),
                 };
                 trace!("Informing of discovered service: {:?}", service);
-                match tx.try_send(Ok(service)) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        error!("Error sending service notification on channel: {:?}", e);
-                    }
+                if tx.push(Ok(service)).is_err() {
+                    warn!("Browser stopped, dropping discovered service");
                 }
             }
-            Err(e) => match tx.try_send(Err(e)) {
-                Ok(_) => {}
-                Err(e) => {
-                    error!("Error sending service notification on channel: {:?}", e);
+            Err(e) => {
+                if tx.push(Err(e)).is_err() {
+                    warn!("Browser stopped, dropping browse error");
                 }
-            },
+            }
         }
     }
 }
@@ -167,44 +160,137 @@ fn service_from_resolved(discovered: DiscoveredService, resolved: Vec<ResolvedSe
     }
 }
 
-fn resolver_thread(rx: Receiver<Result<DiscoveredService>>, tx: SyncSender<Result<Service>>) {
+/// Longest a resolve waits for mDNSResponder to answer, so one service that never answers can't stall every
+/// discovery queued behind it
+const RESOLVE_TIMEOUT: Duration = Duration::from_secs(5);
+/// Longest single wait on a socket or channel, keeps `recv_timeout` responsive to both
+const RECV_POLL: Duration = Duration::from_millis(10);
+/// Most replies processed per wake up, so a busy daemon can't keep `recv_timeout` from returning
+const MAX_REPLIES_PER_POLL: usize = 64;
+
+/// Resolves discovered services in order and hands them to `tx`. Removed services are passed on without resolving:
+/// there's nothing left to answer a resolve, so it would only wait out [`RESOLVE_TIMEOUT`] and hold up the queue.
+/// An Added service whose resolve fails or times out is passed on unresolved too (no hostname, port 0), so it's never lost.
+/// Exits once the browser is dropped (either channel disconnects)
+fn resolver_loop<R>(
+    rx: Receiver<Result<DiscoveredService>>,
+    tx: Sender<Result<Service>>,
+    resolve: R,
+) where
+    R: Fn(&DiscoveredService) -> Result<Vec<ResolvedService>>,
+{
+    // Interface each Added service was delivered with, by what browse reported. Resolve can swap a placeholder like
+    // kDNSServiceInterfaceIndexP2P for the real interface, and the matching Removed must carry the same one
+    let mut delivered_interfaces: HashMap<(String, String, String, u32), u32> = HashMap::new();
+    let key = |service: &DiscoveredService| {
+        (
+            service.name.clone(),
+            service.regtype.clone(),
+            service.domain.clone(),
+            service.interface_index,
+        )
+    };
+    loop {
+        let result = match rx.recv() {
+            Ok(Ok(service)) if service.event_type == ServiceEventType::Removed => {
+                trace!("Service removed: {:?}", service);
+                let interface = delivered_interfaces.remove(&key(&service));
+                let mut removed = service_from_resolved(service, Vec::new());
+                if let Some(interface) = interface {
+                    removed.interface_index = Some(interface);
+                }
+                Ok(removed)
+            }
+            Ok(Ok(service)) => {
+                trace!("Got new service: {:?}, resolving...", service);
+                match resolve(&service) {
+                    Ok(resolved) => {
+                        trace!("Resolved: {:?}", resolved);
+                        let key = key(&service);
+                        let added = service_from_resolved(service, resolved);
+                        if let Some(interface) = added.interface_index {
+                            delivered_interfaces.insert(key, interface);
+                        }
+                        Ok(added)
+                    }
+                    Err(e) => {
+                        // Still hand the discovery on, unresolved (no hostname, port 0), like Removed services:
+                        // an error here would look the same as an idle recv_timeout and the service would be lost
+                        error!("Error resolving {:?}: {:?}", service, e);
+                        delivered_interfaces.remove(&key(&service));
+                        Ok(service_from_resolved(service, Vec::new()))
+                    }
+                }
+            }
+            Ok(Err(e)) => Err(e),
+            Err(_) => {
+                trace!("Resolver channel disconnected, exiting thread as we're stopped/dropped");
+                break;
+            }
+        };
+        if tx.send(result).is_err() {
+            trace!("Browser dropped, exiting resolver thread");
+            break;
+        }
+    }
+}
+
+fn resolver_thread(rx: Receiver<Result<DiscoveredService>>, tx: Sender<Result<Service>>) {
     std::thread::Builder::new()
         .name("astro-dnssd: resolver".into())
-        .spawn(move || loop {
-            match rx.recv_timeout(Duration::from_millis(250)) {
-                Ok(Ok(service)) => {
-                    trace!("Got new service: {:?}, resolving...", service);
-                    match service.resolve() {
-                        Ok(resolved) => {
-                            trace!("Resolved: {:?}", resolved);
-                            let service = service_from_resolved(service, resolved);
-                            if let Err(_e) = tx.send(Ok(service)) {
-                                error!("Error sending resolved service, disconnected channel, exiting thread");
-                                break;
-                            }
-                        }
-                        Err(e) => {
-                            error!("Error resolving: {:?}", e);
-                            if let Err(_e) = tx.send(Err(e)) {
-                                error!("Error sending resolved service, disconnected channel, exiting thread");
-                                break;
-                            }
-                        }
-                    }
+        .spawn(move || resolver_loop(rx, tx, |service| service.resolve(RESOLVE_TIMEOUT)))
+        .expect("Failed to start resolver thread");
+}
+
+/// Waits up to `timeout` for a resolved service, returning one that's already queued straight away. While waiting it
+/// processes every reply waiting on the daemon socket (`socket_ready` polls it, `process` handles one reply), since a
+/// busy network sends many
+fn recv_until<P, F>(
+    rx: &Receiver<Result<Service>>,
+    timeout: Duration,
+    mut socket_ready: P,
+    mut process: F,
+) -> Result<Service>
+where
+    P: FnMut(Duration) -> Result<bool>,
+    F: FnMut() -> ffi::DNSServiceErrorType,
+{
+    let disconnected = || BrowseError::IoError(IoError::from(ErrorKind::ConnectionReset));
+    // No deadline when `timeout` is too big to add to now (like Duration::MAX): wait until something arrives
+    let deadline = Instant::now().checked_add(timeout);
+    let remaining = || match deadline {
+        Some(deadline) => deadline.saturating_duration_since(Instant::now()),
+        None => RECV_POLL,
+    };
+    loop {
+        match rx.try_recv() {
+            Ok(result) => return result,
+            Err(TryRecvError::Empty) => {}
+            Err(TryRecvError::Disconnected) => return Err(disconnected()),
+        }
+        let slice = remaining().min(RECV_POLL);
+        if socket_ready(slice)? {
+            trace!("Data on socket, processing before checking channel");
+            for _ in 0..MAX_REPLIES_PER_POLL {
+                let r = process();
+                if r != kDNSServiceErr_NoError {
+                    return Err(BrowseError::ServiceError(r));
                 }
-                Ok(Err(e)) => {
-                    if let Err(_e) = tx.send(Err(e)) {
-                        error!("Error sending resolved service, disconnected channel, exiting thread");
-                        break;
-                    }
-                }
-                Err(RecvTimeoutError::Timeout) => {}
-                Err(RecvTimeoutError::Disconnected) => {
-                    warn!("Resolver channel disconnected, exiting thread as we're likely stopped/dropped");
+                if !socket_ready(Duration::ZERO)? {
                     break;
                 }
             }
-        }).expect("Failed to start resolver thread");
+        }
+        let slice = remaining().min(RECV_POLL);
+        match rx.recv_timeout(slice) {
+            Ok(result) => return result,
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => return Err(disconnected()),
+        }
+        if matches!(deadline, Some(deadline) if Instant::now() >= deadline) {
+            return Err(BrowseError::Timeout);
+        }
+    }
 }
 
 /// Main service browser, calls callback upon discovery of service
@@ -213,8 +299,8 @@ pub struct ServiceBrowser {
     raw: ffi::DNSServiceRef,
     /// Receiver to receive successfully discovered & resolved services from
     rx: Receiver<Result<Service>>,
-    /// Raw pointer the browse callback uses for the SyncSender, to use with Box::from_raw() during Drop
-    raw_tx: *mut SyncSender<Result<DiscoveredService>>,
+    /// Raw pointer the browse callback uses for the CallbackSender, to use with Box::from_raw() during Drop
+    raw_tx: *mut CallbackSender<Result<DiscoveredService>>,
 }
 
 impl ServiceBrowser {
@@ -250,7 +336,7 @@ impl ServiceBrowser {
             }
             let service_type =
                 CString::new(regtype.as_str()).map_err(|_| BrowseError::InvalidString)?;
-            let (tx, rx) = sync_channel::<Result<DiscoveredService>>(10);
+            let (tx, rx) = callback_queue::<Result<DiscoveredService>>();
             let tx = Box::into_raw(Box::new(tx));
             let mut raw: ffi::DNSServiceRef = ptr::null_mut();
             let r = ffi::DNSServiceBrowse(
@@ -264,9 +350,10 @@ impl ServiceBrowser {
             );
             if r != kDNSServiceErr_NoError {
                 error!("DNSServiceBrowser error: {}", r);
+                drop(Box::from_raw(tx));
                 return Err(BrowseError::ServiceError(r));
             }
-            let (final_tx, final_rx) = sync_channel::<Result<Service>>(10);
+            let (final_tx, final_rx) = channel::<Result<Service>>();
             resolver_thread(rx, final_tx);
             Ok(ServiceBrowser {
                 raw,
@@ -275,24 +362,14 @@ impl ServiceBrowser {
             })
         }
     }
-    /// Returns discovered services if any
+    /// Returns discovered services if any, waiting up to `timeout` for one
     pub fn recv_timeout(&self, timeout: Duration) -> Result<Service> {
-        // TODO: do non-blocking check before calling?
-        if self.has_data(timeout)? {
-            trace!("Data on socket, processing before checking channel");
-            let r = self.process_result();
-            if r != kDNSServiceErr_NoError {
-                return Err(BrowseError::ServiceError(r));
-            }
-        }
-
-        match self.rx.recv_timeout(timeout) {
-            Ok(service_result) => service_result,
-            Err(RecvTimeoutError::Timeout) => Err(BrowseError::Timeout),
-            Err(RecvTimeoutError::Disconnected) => Err(BrowseError::IoError(IoError::from(
-                ErrorKind::ConnectionReset,
-            ))),
-        }
+        recv_until(
+            &self.rx,
+            timeout,
+            |slice| self.has_data(slice),
+            || self.process_result(),
+        )
     }
 }
 
@@ -323,7 +400,8 @@ macro_rules! mut_void_ptr {
     };
 }
 impl DiscoveredService {
-    fn resolve(&self) -> Result<Vec<ResolvedService>> {
+    /// Resolves the service, giving up after `timeout` if mDNSResponder hasn't finished answering
+    fn resolve(&self, timeout: Duration) -> Result<Vec<ResolvedService>> {
         let mut sdref: ffi::DNSServiceRef = unsafe { std::mem::zeroed() };
         let regtype =
             CString::new(self.regtype.as_str()).map_err(|_| BrowseError::InvalidString)?;
@@ -344,11 +422,42 @@ impl DiscoveredService {
             if r != kDNSServiceErr_NoError {
                 return Err(BrowseError::ServiceError(r));
             }
+            let socket = ffi::DNSServiceRefSockFD(sdref);
+            let deadline = Instant::now() + timeout;
+            let mut result = Ok(());
+            // the resolve callback clears more_coming through the context pointer
             #[allow(clippy::while_immutable_condition)]
             while pending_resolution.more_coming {
-                ffi::DNSServiceProcessResult(sdref);
+                // checked here too, so a daemon that keeps sending replies can't hold us past the deadline
+                if Instant::now() >= deadline {
+                    if pending_resolution.results.is_empty() {
+                        result = Err(BrowseError::Timeout);
+                    }
+                    break;
+                }
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                match crate::non_blocking::socket_is_ready(socket as _, remaining) {
+                    Ok(true) => {
+                        let r = ffi::DNSServiceProcessResult(sdref);
+                        if r != kDNSServiceErr_NoError {
+                            result = Err(BrowseError::ServiceError(r));
+                            break;
+                        }
+                    }
+                    Ok(false) => {
+                        if pending_resolution.results.is_empty() {
+                            result = Err(BrowseError::Timeout);
+                        }
+                        break;
+                    }
+                    Err(e) => {
+                        result = Err(e.into());
+                        break;
+                    }
+                }
             }
             ffi::DNSServiceRefDeallocate(sdref);
+            result?;
         }
 
         Ok(pending_resolution.results)
@@ -699,6 +808,10 @@ unsafe fn socket_addr_from_raw(
 }
 
 #[cfg(test)]
+#[path = "browse_queue_tests.rs"]
+mod browse_queue_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -849,5 +962,147 @@ mod tests {
             );
             assert_eq!(pending.error, Some(ffi::kDNSServiceErr_Unknown));
         }
+    }
+}
+
+/// Audit repros (Nye): each test fails on develop because of a blocking/abort/UB risk. Stubs stand in for the
+/// dns_sd daemon calls so they run without mDNSResponder/avahi.
+#[cfg(test)]
+mod audit_repro {
+    use super::*;
+
+    // Symbols in the test executable win over libdns_sd's.
+    #[no_mangle]
+    unsafe extern "C" fn DNSServiceResolve(
+        sd_ref: *mut ffi::DNSServiceRef,
+        _flags: ffi::DNSServiceFlags,
+        _interface_index: u32,
+        _name: *const c_char,
+        _regtype: *const c_char,
+        _domain: *const c_char,
+        _callback: ffi::DNSServiceResolveReply,
+        _context: *mut c_void,
+    ) -> ffi::DNSServiceErrorType {
+        // The service went away (Wi-Fi dropped, device off): the daemon accepts the resolve and never answers.
+        *sd_ref = 0x1 as _;
+        kDNSServiceErr_NoError
+    }
+    #[no_mangle]
+    unsafe extern "C" fn DNSServiceProcessResult(
+        _sd_ref: ffi::DNSServiceRef,
+    ) -> ffi::DNSServiceErrorType {
+        // Daemon gone: the real call returns this at once, forever (or, daemon alive, blocks with nothing to read).
+        std::thread::sleep(Duration::from_millis(20));
+        ffi::kDNSServiceErr_ServiceNotRunning
+    }
+    #[no_mangle]
+    unsafe extern "C" fn DNSServiceRefDeallocate(_sd_ref: ffi::DNSServiceRef) {}
+    // PR #30 polls the ref's socket before processing: hand back a pipe nobody writes to (a daemon that never answers).
+    #[no_mangle]
+    unsafe extern "C" fn DNSServiceRefSockFD(_sd_ref: ffi::DNSServiceRef) -> i32 {
+        static FD: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
+        *FD.get_or_init(|| {
+            let mut fds = [0i32; 2];
+            assert_eq!(libc::pipe(fds.as_mut_ptr()), 0);
+            fds[0]
+        })
+    }
+    /// A-1: resolve() loops on DNSServiceProcessResult with no deadline and ignores its return value.
+    #[test]
+    fn resolve_returns_when_service_never_answers() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let service = DiscoveredService {
+                name: "gone".into(),
+                regtype: "_test._tcp".into(),
+                interface_index: 0,
+                domain: "local.".into(),
+                event_type: ServiceEventType::Removed,
+            };
+            let _ = tx.send(service.resolve(Duration::from_secs(1)).is_ok());
+        });
+        assert!(
+            rx.recv_timeout(Duration::from_secs(3)).is_ok(),
+            "resolve() still stuck after 3s: the one resolver thread is dead, no more browse events"
+        );
+    }
+
+    /// PR #30 review R-1: when the resolve of an Added service times out, the app must not get a bare
+    /// BrowseError::Timeout: recv_timeout returns that for "nothing yet", so the discovery is lost without a trace.
+    #[test]
+    fn resolve_timeout_does_not_swallow_added_service() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (final_tx, final_rx) = std::sync::mpsc::channel();
+        tx.send(Ok(DiscoveredService {
+            name: "slow".into(),
+            regtype: "_test._tcp".into(),
+            interface_index: 0,
+            domain: "local.".into(),
+            event_type: ServiceEventType::Added,
+        }))
+        .unwrap();
+        drop(tx);
+        resolver_loop(rx, final_tx, |_| Err(BrowseError::Timeout));
+        let got = recv_until(
+            &final_rx,
+            Duration::from_secs(1),
+            |_| Ok(false),
+            || unreachable!(),
+        );
+        assert!(
+            !matches!(got, Err(BrowseError::Timeout)),
+            "Added service 'slow' reached the app as Err(Timeout), same as an idle recv_timeout: discovery dropped"
+        );
+    }
+
+    /// PR #30 review R-2: recv_timeout(Duration::MAX) ("wait as long as it takes") worked on develop, must not panic.
+    #[test]
+    fn recv_timeout_duration_max_does_not_panic() {
+        let (tx, rx) = std::sync::mpsc::channel::<Result<Service>>();
+        tx.send(Err(BrowseError::InvalidString)).unwrap();
+        let got = recv_until(&rx, Duration::MAX, |_| Ok(false), || unreachable!());
+        assert!(matches!(got, Err(BrowseError::InvalidString)));
+    }
+}
+
+/// PR #30 review round 2 (Nye)
+#[cfg(test)]
+mod review_r2 {
+    use super::*;
+
+    /// R-3: with peer-to-peer browsing, browse reports the P2P placeholder interface and resolve the concrete one.
+    /// Removed now skips resolve, so it must still carry the interface its Added was delivered with, or an app that
+    /// keys services by name + interface can't match the removal and keeps a stale service.
+    #[test]
+    fn removed_service_keeps_interface_of_its_added_event() {
+        const P2P_PLACEHOLDER: u32 = 0xffff_fffd;
+        let discovered = |event_type| DiscoveredService {
+            name: "ipad".into(),
+            regtype: "_test._tcp".into(),
+            interface_index: P2P_PLACEHOLDER,
+            domain: "local.".into(),
+            event_type,
+        };
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (final_tx, final_rx) = std::sync::mpsc::channel();
+        tx.send(Ok(discovered(ServiceEventType::Added))).unwrap();
+        tx.send(Ok(discovered(ServiceEventType::Removed))).unwrap();
+        drop(tx);
+        resolver_loop(rx, final_tx, |_| {
+            Ok(vec![ResolvedService {
+                full_name: "ipad._test._tcp.local.".into(),
+                hostname: "ipad.local.".into(),
+                port: 1234,
+                txt_record: None,
+                interface_index: 7,
+            }])
+        });
+        let added = final_rx.recv().unwrap().unwrap();
+        let removed = final_rx.recv().unwrap().unwrap();
+        assert_eq!(added.interface_index, Some(7));
+        assert_eq!(
+            removed.interface_index, added.interface_index,
+            "Removed carries the browse placeholder, not the interface its Added event had"
+        );
     }
 }
