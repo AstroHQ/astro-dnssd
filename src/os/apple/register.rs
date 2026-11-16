@@ -376,4 +376,17 @@ mod audit_repro {
             drop(Box::from_raw(tx));
         }
     }
+
+    /// A-7: ServiceRef::drop frees the callback context as a Box<c_void>, so the boxed SyncSender is never dropped
+    /// (its channel leaks on every registration) and the allocation is freed with the wrong layout.
+    #[test]
+    fn dropping_service_drops_the_reply_sender() {
+        let (tx, rx) = sync_channel::<Result<DNSServiceRegisterReply>>(4);
+        let tx = Box::into_raw(Box::new(tx));
+        drop(ServiceRef::new(0x1 as _, tx as _));
+        assert!(
+            matches!(rx.try_recv(), Err(std::sync::mpsc::TryRecvError::Disconnected)),
+            "the reply sender is still alive after the service was dropped"
+        );
+    }
 }
