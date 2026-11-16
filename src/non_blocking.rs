@@ -40,29 +40,112 @@ mod os {
 }
 #[cfg(not(target_os = "windows"))]
 mod os {
-    pub fn socket_is_ready(
-        socket: i32,
-        timeout: std::time::Duration,
-    ) -> Result<bool, std::io::Error> {
-        unsafe {
-            let fd = socket;
-            let mut timeout = libc::timeval {
-                tv_sec: timeout.as_secs() as _,
-                tv_usec: timeout.subsec_micros() as _,
+    use std::time::{Duration, Instant};
+
+    /// Waits up to `timeout` for `socket` to have data. Uses poll() rather than select(), which can't take an fd of
+    /// 1024 or more, and retries a wait a signal cut short with the time that's left rather than reporting ready
+    pub fn socket_is_ready(socket: i32, timeout: Duration) -> Result<bool, std::io::Error> {
+        // None: too far off to add to now, wait without a deadline
+        let deadline = Instant::now().checked_add(timeout);
+        loop {
+            let remaining = match deadline {
+                Some(deadline) => deadline.saturating_duration_since(Instant::now()),
+                None => timeout,
             };
-            let mut read_set = std::mem::zeroed();
-            libc::FD_ZERO(&mut read_set);
-            libc::FD_SET(fd, &mut read_set);
-            libc::select(
-                fd + 1,
-                &mut read_set,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-                &mut timeout,
-            );
-            Ok(libc::FD_ISSET(fd, &read_set))
+            // round up so a sub-millisecond wait doesn't become a busy loop of 0 ms polls
+            let mut millis = remaining.as_millis();
+            if remaining.subsec_nanos() % 1_000_000 != 0 {
+                millis += 1;
+            }
+            let millis = millis.min(libc::c_int::MAX as u128) as libc::c_int;
+            let mut fds = [libc::pollfd {
+                fd: socket,
+                events: libc::POLLIN,
+                revents: 0,
+            }];
+            let r = unsafe { libc::poll(fds.as_mut_ptr(), 1, millis) };
+            if r > 0 {
+                // POLLHUP/POLLERR count as ready too: DNSServiceProcessResult then returns the error at once
+                return Ok(fds[0].revents != 0);
+            }
+            if r == 0 {
+                return Ok(false);
+            }
+            let err = std::io::Error::last_os_error();
+            if err.kind() != std::io::ErrorKind::Interrupted {
+                return Err(err);
+            }
+            if matches!(deadline, Some(deadline) if Instant::now() >= deadline) {
+                return Ok(false);
+            }
         }
     }
 }
 #[cfg(any(not(target_os = "windows"), feature = "win-bonjour"))]
 pub use os::socket_is_ready;
+
+/// Audit repros (Nye)
+#[cfg(all(test, not(target_os = "windows")))]
+mod audit_repro {
+    use super::socket_is_ready;
+    use std::time::Duration;
+
+    extern "C" fn noop(_: libc::c_int) {}
+
+    fn idle_socket() -> (i32, i32) {
+        let mut fds = [0i32; 2];
+        assert_eq!(
+            unsafe { libc::socketpair(libc::AF_UNIX, libc::SOCK_STREAM, 0, fds.as_mut_ptr()) },
+            0
+        );
+        (fds[0], fds[1])
+    }
+
+    /// A-4: select()'s return value is ignored; when a signal interrupts it the fd set is untouched, so we report
+    /// "ready" and the caller walks into a blocking DNSServiceProcessResult.
+    #[test]
+    fn interrupted_select_is_not_ready() {
+        let (fd, _peer) = idle_socket();
+        unsafe {
+            let mut sa: libc::sigaction = std::mem::zeroed();
+            sa.sa_sigaction = noop as extern "C" fn(libc::c_int) as usize;
+            libc::sigaction(libc::SIGUSR1, &sa, std::ptr::null_mut());
+            let me = libc::pthread_self() as usize;
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(200));
+                libc::pthread_kill(me as libc::pthread_t, libc::SIGUSR1);
+            });
+        }
+        let ready = socket_is_ready(fd, Duration::from_secs(2)).unwrap_or(false);
+        assert!(
+            !ready,
+            "nothing was written to the socket, yet it's reported ready"
+        );
+    }
+
+    /// A-5: fds at or above FD_SETSIZE (1024) can't go in an fd_set.
+    #[test]
+    fn high_fd_does_not_panic() {
+        let (fd, _peer) = idle_socket();
+        unsafe {
+            let lim = libc::rlimit {
+                rlim_cur: 4096,
+                rlim_max: 4096,
+            };
+            let mut cur: libc::rlimit = std::mem::zeroed();
+            libc::getrlimit(libc::RLIMIT_NOFILE, &mut cur);
+            if cur.rlim_cur < 2048 {
+                assert_eq!(libc::setrlimit(libc::RLIMIT_NOFILE, &lim), 0);
+            }
+            let high = libc::fcntl(fd, libc::F_DUPFD, 1500);
+            assert!(high >= 1500);
+            let r = std::panic::catch_unwind(|| socket_is_ready(high, Duration::from_millis(50)));
+            assert!(
+                matches!(r, Ok(Ok(false))),
+                "socket_is_ready broke on fd {}: {:?}",
+                high,
+                r.map(|r| r.ok())
+            );
+        }
+    }
+}
