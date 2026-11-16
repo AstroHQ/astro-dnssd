@@ -179,23 +179,45 @@ fn resolver_loop<R>(
 ) where
     R: Fn(&DiscoveredService) -> Result<Vec<ResolvedService>>,
 {
+    // Interface each Added service was delivered with, by what browse reported. Resolve can swap a placeholder like
+    // kDNSServiceInterfaceIndexP2P for the real interface, and the matching Removed must carry the same one
+    let mut delivered_interfaces: HashMap<(String, String, String, u32), u32> = HashMap::new();
+    let key = |service: &DiscoveredService| {
+        (
+            service.name.clone(),
+            service.regtype.clone(),
+            service.domain.clone(),
+            service.interface_index,
+        )
+    };
     loop {
         let result = match rx.recv() {
             Ok(Ok(service)) if service.event_type == ServiceEventType::Removed => {
                 trace!("Service removed: {:?}", service);
-                Ok(service_from_resolved(service, Vec::new()))
+                let interface = delivered_interfaces.remove(&key(&service));
+                let mut removed = service_from_resolved(service, Vec::new());
+                if let Some(interface) = interface {
+                    removed.interface_index = Some(interface);
+                }
+                Ok(removed)
             }
             Ok(Ok(service)) => {
                 trace!("Got new service: {:?}, resolving...", service);
                 match resolve(&service) {
                     Ok(resolved) => {
                         trace!("Resolved: {:?}", resolved);
-                        Ok(service_from_resolved(service, resolved))
+                        let key = key(&service);
+                        let added = service_from_resolved(service, resolved);
+                        if let Some(interface) = added.interface_index {
+                            delivered_interfaces.insert(key, interface);
+                        }
+                        Ok(added)
                     }
                     Err(e) => {
                         // Still hand the discovery on, unresolved (no hostname, port 0), like Removed services:
                         // an error here would look the same as an idle recv_timeout and the service would be lost
                         error!("Error resolving {:?}: {:?}", service, e);
+                        delivered_interfaces.remove(&key(&service));
                         Ok(service_from_resolved(service, Vec::new()))
                     }
                 }
