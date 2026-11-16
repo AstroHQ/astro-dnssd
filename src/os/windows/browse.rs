@@ -1,9 +1,10 @@
 use crate::browse::{Result, Service, ServiceEventType};
+use crate::callback_queue::{callback_queue, CallbackSender};
 use crate::ffi::windows::{
+    _DNS_SERVICE_BROWSE_REQUEST__bindgen_ty_1 as BrowseCallbackUnion,
     DNS_FREE_TYPE_DnsFreeRecordList, DnsFree, DnsServiceBrowse, DnsServiceBrowseCancel,
-    _DNS_SERVICE_BROWSE_REQUEST__bindgen_ty_1 as BrowseCallbackUnion, DNS_QUERY_REQUEST_VERSION1,
-    DNS_TYPE_A, DNS_TYPE_AAAA, DNS_TYPE_PTR, DNS_TYPE_SRV, DNS_TYPE_TEXT, DWORD, PDNS_RECORD,
-    PVOID, _DNS_SERVICE_BROWSE_REQUEST, _DNS_SERVICE_CANCEL,
+    _DNS_SERVICE_BROWSE_REQUEST, _DNS_SERVICE_CANCEL, DNS_QUERY_REQUEST_VERSION1, DNS_TYPE_A,
+    DNS_TYPE_AAAA, DNS_TYPE_PTR, DNS_TYPE_SRV, DNS_TYPE_TEXT, DWORD, PDNS_RECORD, PVOID,
 };
 use crate::os::windows::to_utf16;
 use crate::ServiceBrowserBuilder;
@@ -13,7 +14,7 @@ use std::io::{Error as IoError, ErrorKind};
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::ptr::null_mut;
 use std::str::Utf8Error;
-use std::sync::mpsc::{sync_channel, Receiver, RecvTimeoutError, SyncSender};
+use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::Duration;
 use thiserror::Error;
 use widestring::{U16CStr, U16CString};
@@ -179,16 +180,15 @@ pub unsafe extern "C" fn browse_callback(status: DWORD, context: PVOID, record: 
         error!("Callback has nil context, returning early");
         return;
     }
-    let tx_ptr: *mut SyncSender<Service> = context as _;
+    // Runs on a DNS API thread, so it must never block (DnsServiceBrowseCancel can wait on it) and never drop an
+    // event, see callback_queue
+    let tx_ptr: *mut CallbackSender<Service> = context as _;
     let tx = &*tx_ptr;
     match services_from_record_list(record) {
         Ok(service) => {
             trace!("{:?}", service);
-            match tx.send(service) {
-                Ok(_) => {}
-                Err(e) => {
-                    error!("Error sending service info: {:?}", e);
-                }
+            if tx.push(service).is_err() {
+                warn!("Browser stopped, dropping discovered service");
             }
         }
         Err(e) => {
@@ -200,7 +200,7 @@ pub unsafe extern "C" fn browse_callback(status: DWORD, context: PVOID, record: 
 /// Service browser for DNS-SD services
 pub struct ServiceBrowser {
     cancel: _DNS_SERVICE_CANCEL,
-    context: *mut SyncSender<Service>,
+    context: *mut CallbackSender<Service>,
     receiver: Receiver<Service>,
 }
 impl Drop for ServiceBrowser {
@@ -238,7 +238,7 @@ pub fn browse(builder: ServiceBrowserBuilder) -> Result<ServiceBrowser> {
     let callback = BrowseCallbackUnion {
         pBrowseCallback: Some(browse_callback),
     };
-    let (tx, rx) = sync_channel::<Service>(10);
+    let (tx, rx) = callback_queue::<Service>();
     let tx = Box::into_raw(Box::new(tx));
     let mut request = _DNS_SERVICE_BROWSE_REQUEST {
         Version: DNS_QUERY_REQUEST_VERSION1,
@@ -251,6 +251,7 @@ pub fn browse(builder: ServiceBrowserBuilder) -> Result<ServiceBrowser> {
         let mut cancel: _DNS_SERVICE_CANCEL = std::mem::zeroed();
         let r = DnsServiceBrowse(&mut request, &mut cancel) as u32;
         if r != DNS_REQUEST_PENDING {
+            drop(Box::from_raw(tx));
             return Err(BrowseError::DnsError(r));
         }
         Ok(ServiceBrowser {
