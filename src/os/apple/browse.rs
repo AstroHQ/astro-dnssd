@@ -170,6 +170,7 @@ const MAX_REPLIES_PER_POLL: usize = 64;
 
 /// Resolves discovered services in order and hands them to `tx`. Removed services are passed on without resolving:
 /// there's nothing left to answer a resolve, so it would only wait out [`RESOLVE_TIMEOUT`] and hold up the queue.
+/// An Added service whose resolve fails or times out is passed on unresolved too (no hostname, port 0), so it's never lost.
 /// Exits once the browser is dropped (either channel disconnects)
 fn resolver_loop<R>(
     rx: Receiver<Result<DiscoveredService>>,
@@ -192,8 +193,10 @@ fn resolver_loop<R>(
                         Ok(service_from_resolved(service, resolved))
                     }
                     Err(e) => {
+                        // Still hand the discovery on, unresolved (no hostname, port 0), like Removed services:
+                        // an error here would look the same as an idle recv_timeout and the service would be lost
                         error!("Error resolving {:?}: {:?}", service, e);
-                        Err(e)
+                        Ok(service_from_resolved(service, Vec::new()))
                     }
                 }
             }
@@ -231,16 +234,19 @@ where
     F: FnMut() -> ffi::DNSServiceErrorType,
 {
     let disconnected = || BrowseError::IoError(IoError::from(ErrorKind::ConnectionReset));
-    let deadline = Instant::now() + timeout;
+    // No deadline when `timeout` is too big to add to now (like Duration::MAX): wait until something arrives
+    let deadline = Instant::now().checked_add(timeout);
+    let remaining = || match deadline {
+        Some(deadline) => deadline.saturating_duration_since(Instant::now()),
+        None => RECV_POLL,
+    };
     loop {
         match rx.try_recv() {
             Ok(result) => return result,
             Err(TryRecvError::Empty) => {}
             Err(TryRecvError::Disconnected) => return Err(disconnected()),
         }
-        let slice = deadline
-            .saturating_duration_since(Instant::now())
-            .min(RECV_POLL);
+        let slice = remaining().min(RECV_POLL);
         if socket_ready(slice)? {
             trace!("Data on socket, processing before checking channel");
             for _ in 0..MAX_REPLIES_PER_POLL {
@@ -253,15 +259,13 @@ where
                 }
             }
         }
-        let slice = deadline
-            .saturating_duration_since(Instant::now())
-            .min(RECV_POLL);
+        let slice = remaining().min(RECV_POLL);
         match rx.recv_timeout(slice) {
             Ok(result) => return result,
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => return Err(disconnected()),
         }
-        if Instant::now() >= deadline {
+        if matches!(deadline, Some(deadline) if Instant::now() >= deadline) {
             return Err(BrowseError::Timeout);
         }
     }
@@ -402,6 +406,13 @@ impl DiscoveredService {
             // the resolve callback clears more_coming through the context pointer
             #[allow(clippy::while_immutable_condition)]
             while pending_resolution.more_coming {
+                // checked here too, so a daemon that keeps sending replies can't hold us past the deadline
+                if Instant::now() >= deadline {
+                    if pending_resolution.results.is_empty() {
+                        result = Err(BrowseError::Timeout);
+                    }
+                    break;
+                }
                 let remaining = deadline.saturating_duration_since(Instant::now());
                 match crate::non_blocking::socket_is_ready(socket as _, remaining) {
                     Ok(true) => {
@@ -929,5 +940,105 @@ mod tests {
             );
             assert_eq!(pending.error, Some(ffi::kDNSServiceErr_Unknown));
         }
+    }
+}
+
+/// Audit repros (Nye): each test fails on develop because of a blocking/abort/UB risk. Stubs stand in for the
+/// dns_sd daemon calls so they run without mDNSResponder/avahi.
+#[cfg(test)]
+mod audit_repro {
+    use super::*;
+
+    // Symbols in the test executable win over libdns_sd's.
+    #[no_mangle]
+    unsafe extern "C" fn DNSServiceResolve(
+        sd_ref: *mut ffi::DNSServiceRef,
+        _flags: ffi::DNSServiceFlags,
+        _interface_index: u32,
+        _name: *const c_char,
+        _regtype: *const c_char,
+        _domain: *const c_char,
+        _callback: ffi::DNSServiceResolveReply,
+        _context: *mut c_void,
+    ) -> ffi::DNSServiceErrorType {
+        // The service went away (Wi-Fi dropped, device off): the daemon accepts the resolve and never answers.
+        *sd_ref = 0x1 as _;
+        kDNSServiceErr_NoError
+    }
+    #[no_mangle]
+    unsafe extern "C" fn DNSServiceProcessResult(
+        _sd_ref: ffi::DNSServiceRef,
+    ) -> ffi::DNSServiceErrorType {
+        // Daemon gone: the real call returns this at once, forever (or, daemon alive, blocks with nothing to read).
+        std::thread::sleep(Duration::from_millis(20));
+        ffi::kDNSServiceErr_ServiceNotRunning
+    }
+    #[no_mangle]
+    unsafe extern "C" fn DNSServiceRefDeallocate(_sd_ref: ffi::DNSServiceRef) {}
+    // PR #30 polls the ref's socket before processing: hand back a pipe nobody writes to (a daemon that never answers).
+    #[no_mangle]
+    unsafe extern "C" fn DNSServiceRefSockFD(_sd_ref: ffi::DNSServiceRef) -> i32 {
+        static FD: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
+        *FD.get_or_init(|| {
+            let mut fds = [0i32; 2];
+            assert_eq!(libc::pipe(fds.as_mut_ptr()), 0);
+            fds[0]
+        })
+    }
+    /// A-1: resolve() loops on DNSServiceProcessResult with no deadline and ignores its return value.
+    #[test]
+    fn resolve_returns_when_service_never_answers() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let service = DiscoveredService {
+                name: "gone".into(),
+                regtype: "_test._tcp".into(),
+                interface_index: 0,
+                domain: "local.".into(),
+                event_type: ServiceEventType::Removed,
+            };
+            let _ = tx.send(service.resolve(Duration::from_secs(1)).is_ok());
+        });
+        assert!(
+            rx.recv_timeout(Duration::from_secs(3)).is_ok(),
+            "resolve() still stuck after 3s: the one resolver thread is dead, no more browse events"
+        );
+    }
+
+    /// PR #30 review R-1: when the resolve of an Added service times out, the app must not get a bare
+    /// BrowseError::Timeout: recv_timeout returns that for "nothing yet", so the discovery is lost without a trace.
+    #[test]
+    fn resolve_timeout_does_not_swallow_added_service() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (final_tx, final_rx) = std::sync::mpsc::channel();
+        tx.send(Ok(DiscoveredService {
+            name: "slow".into(),
+            regtype: "_test._tcp".into(),
+            interface_index: 0,
+            domain: "local.".into(),
+            event_type: ServiceEventType::Added,
+        }))
+        .unwrap();
+        drop(tx);
+        resolver_loop(rx, final_tx, |_| Err(BrowseError::Timeout));
+        let got = recv_until(
+            &final_rx,
+            Duration::from_secs(1),
+            |_| Ok(false),
+            || unreachable!(),
+        );
+        assert!(
+            !matches!(got, Err(BrowseError::Timeout)),
+            "Added service 'slow' reached the app as Err(Timeout), same as an idle recv_timeout: discovery dropped"
+        );
+    }
+
+    /// PR #30 review R-2: recv_timeout(Duration::MAX) ("wait as long as it takes") worked on develop, must not panic.
+    #[test]
+    fn recv_timeout_duration_max_does_not_panic() {
+        let (tx, rx) = std::sync::mpsc::channel::<Result<Service>>();
+        tx.send(Err(BrowseError::InvalidString)).unwrap();
+        let got = recv_until(&rx, Duration::MAX, |_| Ok(false), || unreachable!());
+        assert!(matches!(got, Err(BrowseError::InvalidString)));
     }
 }

@@ -31,9 +31,10 @@ pub struct Service {
     pub event_type: ServiceEventType,
     // /// Full name of service
     // pub full_name: String,
-    /// Hostname of service, usable with gethostbyname()
+    /// Hostname of service, usable with gethostbyname(). Empty (with port 0) for a removed service, and for an added
+    /// service that couldn't be resolved in time (Apple/dns_sd)
     pub hostname: String,
-    /// Port service is on
+    /// Port service is on, 0 when it couldn't be resolved (see `hostname`)
     pub port: u16,
     /// TXT record service has if any
     pub txt_record: Option<HashMap<String, String>>,
