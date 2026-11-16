@@ -1042,3 +1042,45 @@ mod audit_repro {
         assert!(matches!(got, Err(BrowseError::InvalidString)));
     }
 }
+
+/// PR #30 review round 2 (Nye)
+#[cfg(test)]
+mod review_r2 {
+    use super::*;
+
+    /// R-3: with peer-to-peer browsing, browse reports the P2P placeholder interface and resolve the concrete one.
+    /// Removed now skips resolve, so it must still carry the interface its Added was delivered with, or an app that
+    /// keys services by name + interface can't match the removal and keeps a stale service.
+    #[test]
+    fn removed_service_keeps_interface_of_its_added_event() {
+        const P2P_PLACEHOLDER: u32 = 0xffff_fffd;
+        let discovered = |event_type| DiscoveredService {
+            name: "ipad".into(),
+            regtype: "_test._tcp".into(),
+            interface_index: P2P_PLACEHOLDER,
+            domain: "local.".into(),
+            event_type,
+        };
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (final_tx, final_rx) = std::sync::mpsc::channel();
+        tx.send(Ok(discovered(ServiceEventType::Added))).unwrap();
+        tx.send(Ok(discovered(ServiceEventType::Removed))).unwrap();
+        drop(tx);
+        resolver_loop(rx, final_tx, |_| {
+            Ok(vec![ResolvedService {
+                full_name: "ipad._test._tcp.local.".into(),
+                hostname: "ipad.local.".into(),
+                port: 1234,
+                txt_record: None,
+                interface_index: 7,
+            }])
+        });
+        let added = final_rx.recv().unwrap().unwrap();
+        let removed = final_rx.recv().unwrap().unwrap();
+        assert_eq!(added.interface_index, Some(7));
+        assert_eq!(
+            removed.interface_index, added.interface_index,
+            "Removed carries the browse placeholder, not the interface its Added event had"
+        );
+    }
+}
