@@ -170,6 +170,15 @@ impl fmt::Debug for RegisteredDnsService {
     }
 }
 impl RegisteredDnsService {
+    /// Whether the registration is still being served.
+    ///
+    /// The native Windows DNS-SD API gives no signal when a registration is lost, so this is always `true` here. On
+    /// other platforms it turns `false` once the registration is gone, and the owner is expected to drop this handle
+    /// and register again.
+    pub fn is_alive(&self) -> bool {
+        true
+    }
+
     /// Replaces the service's TXT record. `DnsServiceRegister` can't change a registration, so this de-registers and
     /// registers again, and browsers see the service go away and come back.
     pub fn update_txt_record(&mut self, txt: HashMap<String, String>) -> Result<()> {

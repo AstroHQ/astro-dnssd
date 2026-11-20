@@ -3,9 +3,9 @@
 // use super::txt::TXTRecord;
 use crate::{
     ffi::apple::{
-        kDNSServiceErr_NoError, kDNSServiceErr_ServiceNotRunning, DNSServiceErrorType,
-        DNSServiceFlags, DNSServiceProcessResult, DNSServiceRef, DNSServiceRefDeallocate,
-        DNSServiceRefSockFD, DNSServiceRegister, DNSServiceUpdateRecord,
+        kDNSServiceErr_NoError, DNSServiceErrorType, DNSServiceFlags, DNSServiceProcessResult,
+        DNSServiceRef, DNSServiceRefDeallocate, DNSServiceRefSockFD, DNSServiceRegister,
+        DNSServiceUpdateRecord,
     },
     os::apple::txt::TXTRecord,
     register::Result,
@@ -15,13 +15,14 @@ use std::{
     collections::HashMap,
     ffi::{c_void, CStr, CString},
     fmt,
-    os::raw::c_char,
+    os::raw::{c_char, c_int},
     ptr::{null, null_mut},
     sync::{
         atomic::{AtomicBool, Ordering},
         mpsc::{sync_channel, SyncSender},
         Arc, Mutex,
     },
+    thread::JoinHandle,
     time::Duration,
 };
 use thiserror::Error;
@@ -134,6 +135,8 @@ pub struct RegisteredDnsService {
     // the processing thread uses it too, and calls on one `DNSServiceRef` must not run at the same time
     service: Arc<Mutex<ServiceRef>>,
     shutdown_flag: Arc<AtomicBool>,
+    // cleared by the processing thread when it stops for any reason but a requested shutdown
+    alive: Arc<AtomicBool>,
 }
 impl fmt::Debug for RegisteredDnsService {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -185,6 +188,15 @@ impl Drop for ServiceRef {
 }
 
 impl RegisteredDnsService {
+    /// Whether the registration is still being served.
+    ///
+    /// `false` once the background thread that processes the daemon's replies has stopped, for example after
+    /// mDNSResponder drops the connection while an iOS device sleeps. The service is then no longer advertised and
+    /// nothing in this crate brings it back: the owner is expected to drop this handle and register again.
+    pub fn is_alive(&self) -> bool {
+        self.alive.load(Ordering::Acquire)
+    }
+
     /// Replaces the service's TXT record. Browsers see the new record without the service going away.
     pub fn update_txt_record(&mut self, txt: HashMap<String, String>) -> Result<()> {
         let txt = TXTRecord::from(txt);
@@ -214,79 +226,104 @@ impl Drop for RegisteredDnsService {
         self.shutdown_flag.store(true, Ordering::Relaxed);
     }
 }
-fn run_thread_with_poll(service: Arc<Mutex<ServiceRef>>, shutdown_flag: Arc<AtomicBool>) {
-    let socket = unsafe { DNSServiceRefSockFD(service.lock().unwrap().raw) };
+/// Why the processing loop stopped
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LoopExit {
+    /// The service was dropped
+    Shutdown,
+    /// The daemon connection failed, so the registration is gone
+    Lost,
+}
 
-    std::thread::spawn(move || {
-        loop {
-            // Check a shutdown flag
-            if shutdown_flag.load(Ordering::Relaxed) {
-                trace!("Shutdown requested, exiting DNS-SD processing thread");
-                break;
+/// Waits on the daemon's socket and processes its replies until a shutdown is requested or the connection fails
+fn poll_loop<F>(socket: c_int, mut process: F, shutdown_flag: &AtomicBool) -> LoopExit
+where
+    F: FnMut() -> DNSServiceErrorType,
+{
+    loop {
+        if shutdown_flag.load(Ordering::Relaxed) {
+            trace!("Shutdown requested, exiting DNS-SD processing thread");
+            return LoopExit::Shutdown;
+        }
+
+        let mut poll_fd = libc::pollfd {
+            fd: socket,
+            events: libc::POLLIN,
+            revents: 0,
+        };
+
+        // 100 ms timeout, so the shutdown flag is seen promptly
+        let result = unsafe { libc::poll(&mut poll_fd, 1, 100) };
+
+        match result {
+            -1 => {
+                let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
+                if errno == libc::EINTR {
+                    continue;
+                }
+                error!(
+                    "DNS-SD poll() error {}, registration lost, exiting thread",
+                    errno
+                );
+                return LoopExit::Lost;
             }
-
-            unsafe {
-                let mut poll_fd = libc::pollfd {
-                    fd: socket,
-                    events: libc::POLLIN,
-                    revents: 0,
-                };
-
-                // 100 ms timeout
-                let result = libc::poll(&mut poll_fd, 1, 100);
-
-                match result {
-                    -1 => {
-                        // Portable errno retrieval
-                        let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
-                        if errno == libc::EINTR {
-                            continue;
-                        } else if errno == libc::EBADF {
-                            trace!("DNS-SD socket closed, exiting thread");
-                            break;
-                        } else {
-                            error!("poll() error: {}, exiting thread", errno);
-                            break;
+            // timeout, check the shutdown flag again
+            0 => continue,
+            _ => {
+                if poll_fd.revents & libc::POLLIN != 0 {
+                    trace!("Processing DNS-SD result...");
+                    let r = process();
+                    if r != kDNSServiceErr_NoError {
+                        if shutdown_flag.load(Ordering::Relaxed) {
+                            return LoopExit::Shutdown;
                         }
+                        error!(
+                            "Error processing DNS-SD result: {}, registration lost, exiting thread",
+                            r
+                        );
+                        return LoopExit::Lost;
                     }
-                    0 => {
-                        // Timeout - continue to check the shutdown flag
-                        continue;
-                    }
-                    _ => {
-                        // Check what events occurred
-                        if poll_fd.revents & libc::POLLIN != 0 {
-                            // Data ready to read
-                            trace!("Processing DNS-SD result...");
-                            let r = {
-                                let service = service.lock().unwrap_or_else(|e| e.into_inner());
-                                DNSServiceProcessResult(service.raw)
-                            };
-                            if r != kDNSServiceErr_NoError {
-                                if r == kDNSServiceErr_ServiceNotRunning {
-                                    trace!("DNS-SD service stopped, exiting thread");
-                                } else {
-                                    error!("Error processing DNS-SD result: {}, exiting thread", r);
-                                }
-                                break;
-                            }
-                        } else if poll_fd.revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL)
-                            != 0
-                        {
-                            // Socket error or hangup
-                            trace!(
-                                "DNS-SD socket error/hangup (revents: {}), exiting thread",
-                                poll_fd.revents
-                            );
-                            break;
-                        }
-                    }
+                } else if poll_fd.revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) != 0 {
+                    error!(
+                        "DNS-SD socket error/hangup (revents: {}), registration lost, exiting thread",
+                        poll_fd.revents
+                    );
+                    return LoopExit::Lost;
                 }
             }
         }
+    }
+}
 
+/// Runs [`poll_loop`] on its own thread, clearing `alive` if it stops for any reason but a requested shutdown
+fn spawn_processing_thread<F>(
+    socket: c_int,
+    process: F,
+    shutdown_flag: Arc<AtomicBool>,
+    alive: Arc<AtomicBool>,
+) -> JoinHandle<()>
+where
+    F: FnMut() -> DNSServiceErrorType + Send + 'static,
+{
+    std::thread::spawn(move || {
+        if poll_loop(socket, process, &shutdown_flag) == LoopExit::Lost {
+            alive.store(false, Ordering::Release);
+        }
         trace!("DNS-SD processing thread exited");
-    });
+    })
+}
+
+fn run_thread_with_poll(
+    service: Arc<Mutex<ServiceRef>>,
+    shutdown_flag: Arc<AtomicBool>,
+    alive: Arc<AtomicBool>,
+) {
+    let socket = unsafe { DNSServiceRefSockFD(service.lock().unwrap().raw) };
+    let process = move || {
+        let service = service.lock().unwrap_or_else(|e| e.into_inner());
+        unsafe { DNSServiceProcessResult(service.raw) }
+    };
+    spawn_processing_thread(socket, process, shutdown_flag, alive);
 }
 
 pub fn register_service(service: DNSServiceBuilder) -> Result<RegisteredDnsService> {
@@ -332,14 +369,16 @@ pub fn register_service(service: DNSServiceBuilder) -> Result<RegisteredDnsServi
         if result == kDNSServiceErr_NoError {
             // process callback
             let shutdown_flag = Arc::new(AtomicBool::new(false));
+            let alive = Arc::new(AtomicBool::new(true));
             let raw_service = Arc::new(Mutex::new(ServiceRef::new(raw, tx as _)));
 
             // spin a thread that keeps the registration working
-            run_thread_with_poll(raw_service.clone(), shutdown_flag.clone());
+            run_thread_with_poll(raw_service.clone(), shutdown_flag.clone(), alive.clone());
 
             let service = RegisteredDnsService {
                 service: raw_service,
                 shutdown_flag,
+                alive,
             };
 
             match rx.recv_timeout(CALLBACK_TIMEOUT) {
