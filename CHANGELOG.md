@@ -3,6 +3,12 @@ All notable changes to this project will be documented in this file. See [conven
 
 - - -
 
+## v0.3.11 - 2026-11-20
+#### Bug Fixes
+- Windows is_alive() is false once the service isn't registered (ENG-6284) - (d70f082) - *jfro*
+- report a lost registration with RegisteredDnsService::is_alive() (ENG-6284) - (ed5e237) - *jfro*
+
+- - -
 ## v0.3.10 - 2026-11-16
 #### Bug Fixes
 - free the register reply sender as its own type - (c0488af) - *jfro*
