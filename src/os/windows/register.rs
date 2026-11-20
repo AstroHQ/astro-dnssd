@@ -172,11 +172,12 @@ impl fmt::Debug for RegisteredDnsService {
 impl RegisteredDnsService {
     /// Whether the registration is still being served.
     ///
-    /// The native Windows DNS-SD API gives no signal when a registration is lost, so this is always `true` here. On
-    /// other platforms it turns `false` once the registration is gone, and the owner is expected to drop this handle
-    /// and register again.
+    /// This is `false` once the service isn't registered, for example when [`Self::update_txt_record`] de-registered
+    /// it and registering again failed, and the owner is expected to drop this handle and register again. The native
+    /// Windows DNS-SD API gives no signal when the OS drops a registration on its own, so that kind of loss can't be
+    /// seen here and this stays `true`.
     pub fn is_alive(&self) -> bool {
-        true
+        matches!(self.state, State::Registered)
     }
 
     /// Replaces the service's TXT record. `DnsServiceRegister` can't change a registration, so this de-registers and
@@ -364,4 +365,31 @@ pub fn register_service(service: DNSServiceBuilder) -> Result<RegisteredDnsServi
     let mut service = RegisteredDnsService::try_from(service)?;
     service.register()?;
     Ok(service)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_alive_only_while_registered() {
+        // built without calling the OS register, so no mDNS traffic and no callback
+        let mut service =
+            RegisteredDnsService::try_from(DNSServiceBuilder::new("_astro-test._tcp", 54321))
+                .expect("construct instance");
+        assert!(!service.is_alive(), "unregistered must not be alive");
+
+        service.state = State::Registered;
+        assert!(service.is_alive());
+
+        // as update_txt_record leaves it when de-register times out
+        let (_tx, rx) = sync_channel::<DWORD>(1);
+        service.state = State::Deregistering(rx);
+        assert!(!service.is_alive(), "de-registering must not be alive");
+
+        // as update_txt_record leaves it when the re-register fails
+        service.state = State::Unregistered;
+        assert!(!service.is_alive());
+        // Unregistered: Drop only frees the instance, no DnsServiceDeRegister
+    }
 }
