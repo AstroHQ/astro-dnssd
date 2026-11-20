@@ -399,3 +399,7 @@ mod audit_repro {
         );
     }
 }
+
+#[cfg(all(test, unix))]
+#[path = "register_liveness_tests.rs"]
+mod register_liveness_tests;
